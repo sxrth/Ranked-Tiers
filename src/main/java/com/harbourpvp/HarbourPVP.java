@@ -97,19 +97,76 @@ public class HarbourPVP extends JavaPlugin implements Listener, CommandExecutor,
     private boolean allowsBlocks(String kit){ return kit.equalsIgnoreCase("Crystal")||kit.equalsIgnoreCase("UHC")||kit.equalsIgnoreCase("SMP"); }
 
     @EventHandler public void click(InventoryClickEvent e) {
-        if(!(e.getWhoClicked() instanceof Player p)) return; String t=e.getView().getTitle(); if(!t.startsWith("HarbourPVP")) return; e.setCancelled(true); ItemStack i=e.getCurrentItem(); if(i==null) return;
-        if(t.equals("HarbourPVP • Play")) { if(e.getSlot()==0) openKitMenu(p,false); else if(e.getSlot()==1) { createParty(p); openParty(p); } else if(e.getSlot()==4) openStats(p); else if(e.getSlot()==8) openKitEditor(p); }
-        else if(t.equals("HarbourPVP • Ranked Queue")) { if(e.getSlot()<kits.size()) joinQueue(p,kits.get(e.getSlot()),false); else if(e.getSlot()==22) openLobby(p); }
-        else if(t.equals("HarbourPVP • Party Queue")) { if(e.getSlot()<kits.size()) { Party q=parties.get(partyOf.get(p.getUniqueId())); if(q!=null) { q.kit=kits.get(e.getSlot()); joinPartyQueue(q); } } }
-        else if(t.equals("HarbourPVP • Party")) { if(e.getSlot()==13 && !partyOf.containsKey(p.getUniqueId())) { createParty(p); openParty(p); } else if(e.getSlot()==27) inviteMenu(p); else if(e.getSlot()==30) openKitMenu(p,true); else if(e.getSlot()==32) leaveParty(p); else if(e.getSlot()==35) disbandParty(p); }
-        else if(t.equals("HarbourPVP • İstatistikler")) { if(e.getSlot()==22) openLobby(p); }
-        else if(t.equals("HarbourPVP • Kit Editor")) { if(e.getSlot()<kits.size()) startEdit(p,kits.get(e.getSlot())); }
-        else if(t.startsWith("HarbourPVP • Edit ")) { if(e.getSlot()==49) saveEdit(p,t.substring("HarbourPVP • Edit ".length())); }
-        else if(t.startsWith("HarbourPVP • Invite")) { Player target=Bukkit.getPlayerExact(ChatColor.stripColor(i.getItemMeta().getDisplayName()).replace("§e","")); if(target!=null) invite(p,target); }
+        if (!(e.getWhoClicked() instanceof Player p)) return;
+        String t = e.getView().getTitle();
+        if (!t.startsWith("HarbourPVP")) return;
+        e.setCancelled(true);
+        if (e.getClickedInventory() == null || e.getClickedInventory() != e.getView().getTopInventory()) return;
+        ItemStack i = e.getCurrentItem();
+        if (i == null || !i.hasItemMeta()) return;
+        int slot = e.getRawSlot();
+
+        if (t.equals("HarbourPVP • Play")) {
+            if (slot == 0) openKitMenu(p, false);
+            else if (slot == 1) { createParty(p); openParty(p); }
+            else if (slot == 4) openStats(p);
+            else if (slot == 8) openKitEditor(p);
+        } else if (t.equals("HarbourPVP • Ranked Queue")) {
+            if (slot < kits.size()) joinQueue(p, kits.get(slot), false);
+            else if (slot == 22) openLobby(p);
+        } else if (t.equals("HarbourPVP • Party Queue")) {
+            if (slot < kits.size()) {
+                Party q = parties.get(partyOf.get(p.getUniqueId()));
+                if (q != null) { q.kit = kits.get(slot); joinPartyQueue(q); }
+            } else if (slot == 22) openParty(p);
+        } else if (t.equals("HarbourPVP • Party")) {
+            if (slot == 13 && !partyOf.containsKey(p.getUniqueId())) { createParty(p); openParty(p); }
+            else if (slot == 27) inviteMenu(p);
+            else if (slot == 30) openKitMenu(p, true);
+            else if (slot == 32) { leaveParty(p); openParty(p); }
+            else if (slot == 35) { disbandParty(p); openParty(p); }
+        } else if (t.equals("HarbourPVP • İstatistikler")) {
+            if (slot == 22) openLobby(p);
+        } else if (t.equals("HarbourPVP • Kit Editor")) {
+            if (slot < kits.size()) startEdit(p, kits.get(slot));
+        } else if (t.startsWith("HarbourPVP • Edit ")) {
+            if (slot == 49) saveEdit(p, t.substring("HarbourPVP • Edit ".length()));
+        } else if (t.startsWith("HarbourPVP • Invite")) {
+            String name = ChatColor.stripColor(i.getItemMeta().getDisplayName());
+            Player target = Bukkit.getPlayerExact(name);
+            if (target != null) invite(p, target);
+        }
     }
+
+    @EventHandler public void interactLobby(org.bukkit.event.player.PlayerInteractEvent e) {
+        Player p = e.getPlayer();
+        if (e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_AIR && e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK
+                && e.getAction() != org.bukkit.event.block.Action.LEFT_CLICK_AIR && e.getAction() != org.bukkit.event.block.Action.LEFT_CLICK_BLOCK) return;
+        ItemStack it = e.getItem();
+        if (it == null || !it.hasItemMeta() || it.getItemMeta().getDisplayName() == null) return;
+        if (matches.containsKey(p.getUniqueId())) return;
+        String n = ChatColor.stripColor(it.getItemMeta().getDisplayName());
+        if (n.equals("Sıraya Gir")) { e.setCancelled(true); openKitMenu(p, false); }
+        else if (n.equals("Parti Aç")) { e.setCancelled(true); createParty(p); openParty(p); }
+        else if (n.equals("İstatistikler")) { e.setCancelled(true); openStats(p); }
+        else if (n.equals("Kit Düzenleme")) { e.setCancelled(true); openKitEditor(p); }
+    }
+
     private void inviteMenu(Player p) { Inventory inv=Bukkit.createInventory(null,54,"HarbourPVP • Invite"); fill(inv); int s=0; for(Player x:Bukkit.getOnlinePlayers()) if(!x.equals(p)) inv.setItem(s++,item(Material.PLAYER_HEAD,"§e"+x.getName(),"§7Tıkla: davet et")); p.openInventory(inv); }
 
-    private void startEdit(Player p,String kit) { inEditor.add(p.getUniqueId()); Inventory inv=Bukkit.createInventory(null,54,"HarbourPVP • Edit "+kit); ItemStack[] saved=getConfig().getList("kits."+kit+".items") instanceof List<?> l? new ItemStack[0]:new ItemStack[0]; ItemStack[] current=p.getInventory().getContents(); for(int j=0;j<36;j++) inv.setItem(j,current[j]); inv.setItem(49,item(Material.EMERALD,"§aKAYDET","§7Bu menüdeki itemleri kaydet.")); p.openInventory(inv); }
+    private void startEdit(Player p,String kit) {
+        inEditor.add(p.getUniqueId());
+        Inventory inv = Bukkit.createInventory(null,54,"HarbourPVP • Edit "+kit);
+        List<?> saved = getConfig().getList("kits."+kit+".items");
+        if (saved != null) {
+            for (int j=0; j<Math.min(36, saved.size()); j++) if (saved.get(j) instanceof ItemStack item) inv.setItem(j, item.clone());
+        } else {
+            ItemStack[] current=p.getInventory().getContents();
+            for(int j=0;j<36;j++) inv.setItem(j,current[j]);
+        }
+        inv.setItem(49,item(Material.EMERALD,"§aKAYDET","§7Bu menüdeki itemleri kaydet."));
+        p.openInventory(inv);
+    }
     private void saveEdit(Player p,String kit) { ItemStack[] c=p.getOpenInventory().getTopInventory().getContents(); getConfig().set("kits."+kit+".items",Arrays.asList(Arrays.copyOf(c,36))); saveConfig(); inEditor.remove(p.getUniqueId()); p.closeInventory(); p.sendMessage("§a[HarbourPVP] "+kit+" kiti kaydedildi."); }
 
     private void createParty(Player p) { if(partyOf.containsKey(p.getUniqueId())) return; String id=p.getUniqueId().toString(); Party q=new Party(id,p.getUniqueId()); parties.put(id,q); partyOf.put(p.getUniqueId(),id); p.sendMessage("§aParti oluşturuldu!"); }
