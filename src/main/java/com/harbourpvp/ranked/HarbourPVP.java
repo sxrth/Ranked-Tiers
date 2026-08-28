@@ -31,6 +31,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private static final String LOBBY_TITLE = "§8HarbourPVP §7| §6Lobby";
     private final Map<UUID, UUID> partyOwner = new HashMap<>();
     private final Map<UUID, Set<UUID>> parties = new HashMap<>();
+    private final Map<UUID, Kit> selectedKit = new HashMap<>();
 
     @Override public void onEnable() {
         saveDefaultConfig(); store = new DataStore(this);
@@ -69,7 +70,9 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
         for(int i=0;i<Kit.values().length;i++){ Kit k=Kit.values()[i]; ItemStack it=new ItemStack(k.icon(this)); ItemMeta m=it.getItemMeta(); m.setDisplayName("§d§l"+k.name()); m.setLore(List.of("§7Kit loadoutunu düzenle","§eTıkla → düzenle")); it.setItemMeta(m); inv.setItem(slots[i],it); }
         p.openInventory(inv);
     }
-    @EventHandler public void join(org.bukkit.event.player.PlayerJoinEvent e){ Bukkit.getScheduler().runTask(this,()->giveLobbyItems(e.getPlayer())); }
+    @EventHandler public void join(org.bukkit.event.player.PlayerJoinEvent e){ selectedKit.put(e.getPlayer().getUniqueId(),Kit.Sword);
+        Bukkit.getScheduler().runTask(this,()->giveLobbyItems(e.getPlayer()));
+        updateTag(e.getPlayer().getUniqueId()); }
 
     private boolean play(CommandSender s, String[] a) {
         if (!(s instanceof Player p)) { s.sendMessage("Players only."); return true; }
@@ -109,6 +112,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     }
 
     private void toggleQueue(Player p, Kit kit) {
+        selectedKit.put(p.getUniqueId(), kit); updateTag(p.getUniqueId());
         if (matches.stream().anyMatch(m -> m.contains(p.getUniqueId()))) { p.sendMessage("§cZaten bir maçtasın."); return; }
         Deque<UUID> q = queues.get(kit);
         if (q.contains(p.getUniqueId())) { q.remove(p.getUniqueId()); p.sendMessage("§c"+kit+" §7sırasından çıktın."); return; }
@@ -294,6 +298,16 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private Integer threshold(String tier){if(getConfig().contains("tiers."+tier))return getConfig().getInt("tiers."+tier);return null;}
     private Location location(String path){String raw=getConfig().getString(path);if(raw==null)return null;String[] p=raw.split(",");if(p.length<4)return null;World w=Bukkit.getWorld(p[0]);if(w==null)return null;try{return new Location(w,Double.parseDouble(p[1]),Double.parseDouble(p[2]),Double.parseDouble(p[3]),p.length>4?Float.parseFloat(p[4]):0,p.length>5?Float.parseFloat(p[5]):0);}catch(Exception e){return null;}}
     private List<String> names(){return Arrays.stream(Kit.values()).map(Enum::name).toList();}
-    private void updateTag(UUID id){Player p=Bukkit.getPlayer(id);if(p==null)return;Scoreboard sb=Bukkit.getScoreboardManager().getMainScoreboard();PlayerData d=store.get(id,p.getName());String teamName="hp_"+tier(d.rating(Kit.Sword));Team old=sb.getEntryTeam(p.getName());if(old!=null)old.removeEntry(p.getName());Team team=sb.getTeam(teamName);if(team==null)team=sb.registerNewTeam(teamName);team.setPrefix("§e["+tier(d.rating(Kit.Sword))+"] §f");team.addEntry(p.getName());p.setScoreboard(sb);}
+    private void updateTag(UUID id){
+        Player p=Bukkit.getPlayer(id); if(p==null)return;
+        Scoreboard sb=Bukkit.getScoreboardManager().getMainScoreboard();
+        PlayerData d=store.get(id,p.getName());
+        Kit kit=selectedKit.getOrDefault(id,Kit.Sword);
+        String teamName="hp_"+kit.name()+"_"+tier(d.rating(kit));
+        Team old=sb.getEntryTeam(p.getName()); if(old!=null)old.removeEntry(p.getName());
+        Team team=sb.getTeam(teamName); if(team==null)team=sb.registerNewTeam(teamName);
+        team.setPrefix("§e["+tier(d.rating(kit))+"] §f");
+        team.addEntry(p.getName()); p.setScoreboard(sb);
+    }
     @Override public List<String> onTabComplete(CommandSender s,Command c,String l,String[] a){if(c.getName().equals("play")||c.getName().equals("leaderboard")){if(a.length==1)return Arrays.stream(Kit.values()).map(Enum::name).filter(x->x.toLowerCase().startsWith(a[0].toLowerCase())).toList();}return List.of();}
 }
