@@ -3,7 +3,7 @@ package com.harbourpvp.ranked;
 import org.bukkit.Material;
 
 public enum Kit {
-    Sword, Axe, Mace, Pot, NethPot, UHC, SMP, Vanilla;
+    Sword, Axe, Mace, Pot, NethPot, UHC, Crystal, SMP, Vanilla;
 
     public static Kit from(String value) {
         for (Kit kit : values()) if (kit.name().equalsIgnoreCase(value)) return kit;

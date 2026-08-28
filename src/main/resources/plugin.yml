@@ -24,9 +24,12 @@ commands:
   queue:
     description: Show ranked queues.
     usage: /queue
+  party:
+    description: Create and manage parties.
+    usage: /party <create|invite|leave|list|disband>
   ht:
     description: HarbourPVP admin commands.
-    usage: /ht <setrating|settier|reset|forcematch|reload>
+    usage: /ht <setrating|settier|reset|forcematch|kit|reload>
     permission: harbourpvp.admin
 
 permissions:

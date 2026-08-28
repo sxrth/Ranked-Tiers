@@ -25,41 +25,64 @@ tiers:
 kits:
   Sword:
     icon: NETHERITE_SWORD
+    allow-block-place: false
+    allow-block-break: false
     arena-world: world
     position1: world,0,100,0,0,0
     position2: world,10,100,0,180,0
   Axe:
     icon: NETHERITE_AXE
+    allow-block-place: false
+    allow-block-break: false
     arena-world: world
     position1: world,0,100,20,0,0
     position2: world,10,100,20,180,0
   Mace:
     icon: MACE
+    allow-block-place: false
+    allow-block-break: false
     arena-world: world
     position1: world,0,100,40,0,0
     position2: world,10,100,40,180,0
   Pot:
     icon: SPLASH_POTION
+    allow-block-place: false
+    allow-block-break: false
     arena-world: world
     position1: world,0,100,60,0,0
     position2: world,10,100,60,180,0
   NethPot:
     icon: SPLASH_POTION
+    allow-block-place: false
+    allow-block-break: false
     arena-world: world
     position1: world,0,100,80,0,0
     position2: world,10,100,80,180,0
   UHC:
     icon: GOLDEN_APPLE
+    allow-block-place: true
+    allow-block-break: true
     arena-world: world
     position1: world,0,100,100,0,0
     position2: world,10,100,100,180,0
+  Crystal:
+    icon: END_CRYSTAL
+    arena-world: world
+    position1: world,0,100,160,0,0
+    position2: world,10,100,160,180,0
+    allow-block-place: true
+    allow-block-break: true
   SMP:
     icon: GRASS_BLOCK
+    allow-block-place: true
+    allow-block-break: true
     arena-world: world
     position1: world,0,100,120,0,0
     position2: world,10,100,120,180,0
   Vanilla:
     icon: DIAMOND_SWORD
+    allow-block-place: false
+    allow-block-break: false
     arena-world: world
     position1: world,0,100,140,0,0
     position2: world,10,100,140,180,0

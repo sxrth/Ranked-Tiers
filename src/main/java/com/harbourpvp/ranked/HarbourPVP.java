@@ -7,7 +7,18 @@ import org.bukkit.event.*;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.configuration.serialization.ConfigurationSerialization;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.scoreboard.*;
+import org.bukkit.boss.*;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 import java.util.*;
 
 public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Listener, CommandExecutor, TabCompleter {
@@ -15,12 +26,19 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private final EnumMap<Kit, Deque<UUID>> queues = new EnumMap<>(Kit.class);
     private final List<Match> matches = new ArrayList<>();
     private final Map<UUID, Location> returnLocations = new HashMap<>();
+    private static final String GUI_TITLE = "§8HarbourPVP §7| §6Ranked Kits";
+    private static final String EDITOR_PREFIX = "§8HarbourPVP §7| §eKit Editor: ";
+    private static final String LOBBY_TITLE = "§8HarbourPVP §7| §6Lobby";
+    private static final String PARTY_TITLE = "§8HarbourPVP §7| §dParti";
+    private static final String PARTY_INVITE_TITLE = "§8HarbourPVP §7| §aOyuncu Davet Et";
+    private final Map<UUID, UUID> partyOwner = new HashMap<>();
+    private final Map<UUID, Set<UUID>> parties = new HashMap<>();
 
     @Override public void onEnable() {
         saveDefaultConfig(); store = new DataStore(this);
         for (Kit kit : Kit.values()) queues.put(kit, new ArrayDeque<>());
         getServer().getPluginManager().registerEvents(this, this);
-        for (String cmd : List.of("play","stats","leaderboard","history","queue","ht")) {
+        for (String cmd : List.of("play","stats","leaderboard","history","queue","party","ht")) {
             Objects.requireNonNull(getCommand(cmd)).setExecutor(this); Objects.requireNonNull(getCommand(cmd)).setTabCompleter(this);
         }
         getServer().getScheduler().runTaskTimer(this, store::save, 20L * 60L, 20L * 60L);
@@ -34,40 +52,242 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
         if (c.getName().equalsIgnoreCase("leaderboard")) return leaderboard(s,a);
         if (c.getName().equalsIgnoreCase("history")) return history(s,a);
         if (c.getName().equalsIgnoreCase("queue")) return queue(s);
+        if (c.getName().equalsIgnoreCase("party")) return party(s,a);
         if (c.getName().equalsIgnoreCase("ht")) return admin(s,a);
         return false;
     }
+    private void giveLobbyItems(Player p){
+        p.getInventory().clear();
+        ItemStack queue=new ItemStack(Material.DIAMOND_SWORD); ItemMeta qm=queue.getItemMeta(); qm.setDisplayName("§b§lSıraya Gir"); qm.setLore(List.of("§7Ranked kit seçmek için tıkla")); queue.setItemMeta(qm);
+        ItemStack party=new ItemStack(Material.CHEST); ItemMeta pm=party.getItemMeta(); pm.setDisplayName("§6§lParti Aç"); pm.setLore(List.of("§7/party create ile parti oluştur")); party.setItemMeta(pm);
+        ItemStack stats=new ItemStack(Material.PAPER); ItemMeta sm=stats.getItemMeta(); sm.setDisplayName("§e§lİstatistikler"); sm.setLore(List.of("§7Ranked istatistiklerini görüntüle")); stats.setItemMeta(sm);
+        ItemStack book=new ItemStack(Material.BOOK); ItemMeta bm=book.getItemMeta(); bm.setDisplayName("§d§lKit Düzenleme"); bm.setLore(List.of("§7Kişisel kitlerini düzenle")); book.setItemMeta(bm);
+        p.getInventory().setItem(0,queue); p.getInventory().setItem(1,party); p.getInventory().setItem(4,stats); p.getInventory().setItem(8,book);
+        p.getInventory().setHeldItemSlot(0);
+    }
+    private void openKitEditorSelector(Player p){
+        Inventory inv=Bukkit.createInventory(null,27,"§8HarbourPVP §7| §dKit Düzenleme");
+        int[] slots={10,11,12,13,14,15,16,22,26};
+        for(int i=0;i<Kit.values().length;i++){ Kit k=Kit.values()[i]; ItemStack it=new ItemStack(k.icon(this)); ItemMeta m=it.getItemMeta(); m.setDisplayName("§d§l"+k.name()); m.setLore(List.of("§7Kit loadoutunu düzenle","§eTıkla → düzenle")); it.setItemMeta(m); inv.setItem(slots[i],it); }
+        p.openInventory(inv);
+    }
+    @EventHandler public void join(org.bukkit.event.player.PlayerJoinEvent e){ Bukkit.getScheduler().runTask(this,()->giveLobbyItems(e.getPlayer())); }
+
     private boolean play(CommandSender s, String[] a) {
         if (!(s instanceof Player p)) { s.sendMessage("Players only."); return true; }
-        if (a.length == 0) { p.sendMessage("§6HarbourPVP §7kits: §e" + String.join("§7, §e", names())); p.sendMessage("§7Use §e/play <kit>§7."); return true; }
-        Kit kit = Kit.from(a[0]); if (kit == null) { p.sendMessage("§cUnknown kit."); return true; }
-        if (matches.stream().anyMatch(m -> m.contains(p.getUniqueId()))) { p.sendMessage("§cYou are already in a match."); return true; }
-        Deque<UUID> q = queues.get(kit); q.remove(p.getUniqueId());
-        UUID opponent = null;
-        for (UUID id : q) if (!id.equals(p.getUniqueId()) && Bukkit.getPlayer(id) != null) { opponent=id; break; }
-        if (opponent == null) { q.addLast(p.getUniqueId()); p.sendMessage("§aQueued for §e"+kit+"§a. Waiting for an opponent..."); }
-        else { q.remove(opponent); startMatch(kit, p.getUniqueId(), opponent); }
+        if (a.length == 0) { openKitGui(p); return true; }
+        Kit kit = Kit.from(a[0]);
+        if (kit == null) { p.sendMessage("§cUnknown kit. Use /play to open the GUI."); return true; }
+        toggleQueue(p, kit);
         return true;
     }
+
+    private void openKitGui(Player p) {
+        Inventory inv = Bukkit.createInventory(null, 27, GUI_TITLE);
+        Kit[] kits = Kit.values();
+        int[] slots = {10,11,12,13,14,15,16,20,22};
+        for (int i=0; i<kits.length; i++) {
+            Kit k = kits[i];
+            ItemStack item = new ItemStack(k.icon(this));
+            ItemMeta meta = item.getItemMeta();
+            meta.setDisplayName("§6§l" + k.name());
+            PlayerData d = store.get(p.getUniqueId(), p.getName());
+            int rating = d.rating(k);
+            int waiting = queues.get(k).size();
+            List<String> lore = new ArrayList<>();
+            lore.add("§7Rating: §e" + rating);
+            lore.add("§7Tier: §d§l" + tier(rating));
+            lore.add("§7Sırada: §a" + waiting + " oyuncu");
+            lore.add("");
+            lore.add(queues.get(k).contains(p.getUniqueId()) ? "§cTıkla: Sıradan çık" : "§aTıkla: Sıraya gir");
+            if (k == Kit.Crystal) lore.add("§8Crystal + Obsidian + End Crystal");
+            meta.setLore(lore);
+            item.setItemMeta(meta);
+            inv.setItem(slots[i], item);
+        }
+        ItemStack close = new ItemStack(Material.BARRIER);
+        ItemMeta cm = close.getItemMeta(); cm.setDisplayName("§cKapat"); close.setItemMeta(cm); inv.setItem(26, close);
+        p.openInventory(inv);
+    }
+
+    private void toggleQueue(Player p, Kit kit) {
+        if (matches.stream().anyMatch(m -> m.contains(p.getUniqueId()))) { p.sendMessage("§cZaten bir maçtasın."); return; }
+        Deque<UUID> q = queues.get(kit);
+        if (q.contains(p.getUniqueId())) { q.remove(p.getUniqueId()); p.sendMessage("§c"+kit+" §7sırasından çıktın."); return; }
+        UUID opponent = null;
+        for (UUID id : q) if (!id.equals(p.getUniqueId()) && Bukkit.getPlayer(id) != null && !matches.stream().anyMatch(m -> m.contains(id))) { opponent=id; break; }
+        if (opponent == null) { q.addLast(p.getUniqueId()); p.sendMessage("§a"+kit+" §7sırasına girdin. Rakip bekleniyor..."); }
+        else { q.remove(opponent); startMatch(kit, p.getUniqueId(), opponent); }
+    }
+
+    @EventHandler public void interactLobby(org.bukkit.event.player.PlayerInteractEvent e){
+        Player p=e.getPlayer(); if(find(p.getUniqueId())!=null)return; ItemStack it=e.getItem(); if(it==null||!it.hasItemMeta())return; String n=ChatColor.stripColor(it.getItemMeta().getDisplayName());
+        if(n.equals("Sıraya Gir")){e.setCancelled(true);openKitGui(p);} else if(n.equals("Parti Aç")){e.setCancelled(true);openPartyGui(p);} else if(n.equals("İstatistikler")){e.setCancelled(true);stats(p,new String[0]);} else if(n.equals("Kit Düzenleme")){e.setCancelled(true);openKitEditorSelector(p);}
+    }
+    @EventHandler public void dropLobby(org.bukkit.event.player.PlayerDropItemEvent e){ if(find(e.getPlayer().getUniqueId())==null) e.setCancelled(true); }
+
+    @EventHandler public void inventoryClick(InventoryClickEvent e) {
+        String title=e.getView().getTitle();
+        if (LOBBY_TITLE.equals(title)){
+            e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||e.getCurrentItem()==null)return;
+            int slot=e.getRawSlot();
+            if(slot==0) openKitGui(p);
+            else if(slot==1) openPartyGui(p);
+            else if(slot==4) stats(p,new String[0]);
+            else if(slot==8) openKitEditorSelector(p);
+            return;
+        }
+        if (PARTY_TITLE.equals(title)) {
+            e.setCancelled(true);
+            if (!(e.getWhoClicked() instanceof Player p) || e.getCurrentItem() == null) return;
+            int slot=e.getRawSlot();
+            ItemStack item=e.getCurrentItem();
+            if(slot==11){
+                if(!hasParty(p)) createParty(p);
+                openPartyInviteGui(p);
+            } else if(slot==15){
+                if(hasParty(p)) leaveParty(p); else createParty(p);
+                openPartyGui(p);
+            } else if(slot==13){
+                p.closeInventory(); p.sendMessage("§d§lParti §8» §7/party list ile üyeleri görebilirsin.");
+            } else if(slot==26){ p.closeInventory(); }
+            return;
+        }
+        if (PARTY_INVITE_TITLE.equals(title)) {
+            e.setCancelled(true);
+            if (!(e.getWhoClicked() instanceof Player p) || e.getCurrentItem() == null) return;
+            if(e.getRawSlot()==49){openPartyGui(p);return;}
+            if(e.getRawSlot() < 0 || e.getRawSlot() >= e.getView().getTopInventory().getSize()) return;
+            ItemMeta meta=e.getCurrentItem().getItemMeta();
+            if(meta==null || meta.getPersistentDataContainer()==null) return;
+            String raw=meta.getPersistentDataContainer().get(new org.bukkit.NamespacedKey(this,"party-player"), org.bukkit.persistence.PersistentDataType.STRING);
+            if(raw==null)return;
+            try{
+                Player target=Bukkit.getPlayer(UUID.fromString(raw));
+                if(target==null){p.sendMessage("§cOyuncu artık çevrimiçi değil.");return;}
+                inviteToParty(p,target);
+                openPartyInviteGui(p);
+            }catch(Exception ignored){}
+            return;
+        }
+        if ("§8HarbourPVP §7| §dKit Düzenleme".equals(title)){
+            e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||e.getCurrentItem()==null)return;
+            ItemMeta m=e.getCurrentItem().getItemMeta(); if(m==null)return; Kit k=Kit.from(ChatColor.stripColor(m.getDisplayName())); if(k!=null) openKitEditor(p,k); return;
+        }
+        if (!GUI_TITLE.equals(title)) return;
+        e.setCancelled(true);
+        if (!(e.getWhoClicked() instanceof Player p) || e.getCurrentItem() == null) return;
+        ItemStack item = e.getCurrentItem();
+        if (item.getType() == Material.BARRIER) { p.closeInventory(); return; }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null || meta.getDisplayName() == null) return;
+        String name = ChatColor.stripColor(meta.getDisplayName()).replace("Ranked", "").trim();
+        Kit k = Kit.from(name);
+        if (k != null) { toggleQueue(p, k); Bukkit.getScheduler().runTask(this, () -> openKitGui(p)); }
+    }
+
     private void startMatch(Kit kit, UUID one, UUID two) {
         Player a=Bukkit.getPlayer(one), b=Bukkit.getPlayer(two); if(a==null||b==null)return;
         if (returnLocations.put(one,a.getLocation())==null) returnLocations.put(two,b.getLocation()); else returnLocations.put(two,b.getLocation());
         Location l1=location("kits."+kit.name()+".position1"), l2=location("kits."+kit.name()+".position2");
         if(l1==null||l2==null){a.sendMessage("§cArena positions are not configured for "+kit+".");b.sendMessage("§cArena positions are not configured for "+kit+".");return;}
         prepare(a,kit); prepare(b,kit); a.teleport(l1); b.teleport(l2); matches.add(new Match(kit,one,two));
-        a.sendMessage("§6Ranked §8» §e"+kit+" §7match started against §f"+b.getName()+"§7!");
-        b.sendMessage("§6Ranked §8» §e"+kit+" §7match started against §f"+a.getName()+"§7!");
+        a.setInvulnerable(true); b.setInvulnerable(true);
+        for(int sec=3;sec>=1;sec--){ final int n=sec; Bukkit.getScheduler().runTaskLater(this,()->{ if(a.isOnline()) {a.sendTitle("§6"+n,"§7Get ready!",0,20,0); a.spigot().sendMessage(ChatMessageType.ACTION_BAR,new TextComponent("§e§l"+n));} if(b.isOnline()){b.sendTitle("§6"+n,"§7Get ready!",0,20,0); b.spigot().sendMessage(ChatMessageType.ACTION_BAR,new TextComponent("§e§l"+n));}},(3-sec)*20L); }
+        Bukkit.getScheduler().runTaskLater(this,()->{ if(a.isOnline()) {a.setInvulnerable(false); a.sendTitle("§a§lFIGHT!","§7Good luck",0,20,10);} if(b.isOnline()){b.setInvulnerable(false); b.sendTitle("§a§lFIGHT!","§7Good luck",0,20,10);}},60L);
     }
-    private void prepare(Player p, Kit kit){ p.setHealth(p.getMaxHealth()); p.setFoodLevel(20); p.setSaturation(20); p.getInventory().clear();
+    private void prepare(Player p, Kit kit){
+        p.setHealth(p.getMaxHealth()); p.setFoodLevel(20); p.setSaturation(20);
+        p.getInventory().clear();
+        if (!loadSavedKit(p, kit)) applyDefaultKit(p, kit);
+    }
+
+    private void applyDefaultKit(Player p, Kit kit){
         switch(kit){
             case Sword, Vanilla -> {p.getInventory().addItem(new ItemStack(Material.NETHERITE_SWORD));p.getInventory().addItem(new ItemStack(Material.SHIELD));p.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE,4));}
             case Axe -> {p.getInventory().addItem(new ItemStack(Material.NETHERITE_AXE));p.getInventory().addItem(new ItemStack(Material.NETHERITE_SWORD));p.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE,4));}
             case Mace -> {p.getInventory().addItem(new ItemStack(Material.MACE));p.getInventory().addItem(new ItemStack(Material.ENDER_PEARL,4));p.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE,4));}
             case Pot, NethPot -> {p.getInventory().addItem(new ItemStack(Material.NETHERITE_SWORD));p.getInventory().addItem(new ItemStack(Material.SPLASH_POTION,16));p.getInventory().addItem(new ItemStack(Material.ENDER_PEARL,4));}
+            case Crystal -> {p.getInventory().addItem(new ItemStack(Material.NETHERITE_SWORD));p.getInventory().addItem(new ItemStack(Material.OBSIDIAN,64));p.getInventory().addItem(new ItemStack(Material.END_CRYSTAL,64));p.getInventory().addItem(new ItemStack(Material.TOTEM_OF_UNDYING,2));p.getInventory().addItem(new ItemStack(Material.ENDER_PEARL,16));p.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE,8));}
             case UHC -> {p.getInventory().addItem(new ItemStack(Material.NETHERITE_SWORD));p.getInventory().addItem(new ItemStack(Material.BOW));p.getInventory().addItem(new ItemStack(Material.ARROW,32));p.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE,8));}
             case SMP -> {p.getInventory().addItem(new ItemStack(Material.NETHERITE_SWORD));p.getInventory().addItem(new ItemStack(Material.ENDER_PEARL,8));p.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE,8));}
         }
     }
+
+    private boolean loadSavedKit(Player p, Kit kit){
+        String path="kits."+kit.name()+".items";
+        if(!getConfig().isList(path)) return false;
+        List<?> raw=getConfig().getList(path);
+        if(raw==null || raw.isEmpty()) return false;
+        PlayerInventory inv=p.getInventory();
+        inv.clear();
+        for(int i=0;i<Math.min(36,raw.size());i++){
+            Object o=raw.get(i);
+            if(o instanceof Map<?,?> map){
+                try { inv.setItem(i, ItemStack.deserialize((Map<String,Object>) map)); } catch(Exception ignored) {}
+            }
+        }
+        if(raw.size()>36){ inv.setHelmet(deserializeItem(raw.get(36))); }
+        if(raw.size()>37){ inv.setChestplate(deserializeItem(raw.get(37))); }
+        if(raw.size()>38){ inv.setLeggings(deserializeItem(raw.get(38))); }
+        if(raw.size()>39){ inv.setBoots(deserializeItem(raw.get(39))); }
+        if(raw.size()>40){ inv.setItemInOffHand(deserializeItem(raw.get(40))); }
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ItemStack deserializeItem(Object o){
+        if(!(o instanceof Map<?,?> map)) return null;
+        try { return ItemStack.deserialize((Map<String,Object>) map); } catch(Exception e){ return null; }
+    }
+
+    private void openKitEditor(Player p, Kit kit){
+        Inventory inv=Bukkit.createInventory(null,45,EDITOR_PREFIX+kit.name());
+        String path="kits."+kit.name()+".items";
+        List<?> raw=getConfig().getList(path);
+        if(raw!=null){
+            for(int i=0;i<Math.min(41,raw.size());i++){
+                ItemStack item=deserializeItem(raw.get(i));
+                if(item!=null) inv.setItem(i,item);
+            }
+        } else {
+            p.sendMessage("§7Bu kitin kayıtlı loadout'u yok. §e/ht kit save "+kit.name()+"§7 ile mevcut envanterini kaydedebilirsin.");
+        }
+        ItemStack info=new ItemStack(Material.KNOWLEDGE_BOOK);
+        ItemMeta meta=info.getItemMeta(); meta.setDisplayName("§e§lKit Editor");
+        meta.setLore(List.of("§7Kit: §f"+kit.name(),"§7Slot 0-35: ana envanter","§7Slot 36-39: zırh","§7Slot 40: offhand","","§a/ht kit save "+kit.name(),"§c/ht kit clear "+kit.name()));
+        info.setItemMeta(meta); inv.setItem(44,info);
+        p.openInventory(inv);
+    }
+
+    private boolean saveKitFromEditor(Player p, Kit kit){
+        if(!p.getOpenInventory().getTitle().equals(EDITOR_PREFIX+kit.name())){ p.sendMessage("§cÖnce /ht kit edit "+kit.name()+" açmalısın."); return true; }
+        Inventory inv=p.getOpenInventory().getTopInventory();
+        List<Map<String,Object>> items=new ArrayList<>();
+        for(int i=0;i<41;i++){
+            ItemStack item=inv.getItem(i);
+            items.add(item==null?null:item.serialize());
+        }
+        getConfig().set("kits."+kit.name()+".items",items);
+        saveConfig();
+        p.sendMessage("§a✓ "+kit.name()+" kit loadout'u kaydedildi.");
+        return true;
+    }
+
+    private boolean clearKit(Kit kit, CommandSender s){
+        getConfig().set("kits."+kit.name()+".items",null); saveConfig(); s.sendMessage("§a✓ "+kit.name()+" kayıtlı loadout'u silindi. Varsayılan kit kullanılacak."); return true;
+    }
+
+    @EventHandler public void blockPlace(BlockPlaceEvent e) {
+        Match m=find(e.getPlayer().getUniqueId());
+        if(m!=null) e.setCancelled(!getConfig().getBoolean("kits."+m.kit().name()+".allow-block-place", false));
+    }
+
+    @EventHandler public void blockBreak(BlockBreakEvent e) {
+        Match m=find(e.getPlayer().getUniqueId());
+        if(m!=null) e.setCancelled(!getConfig().getBoolean("kits."+m.kit().name()+".allow-block-break", false));
+    }
+
     @EventHandler public void death(PlayerDeathEvent e){ Player loser=e.getEntity(); Match m=find(loser.getUniqueId()); if(m!=null) Bukkit.getScheduler().runTask(this,()->finish(m,m.opponent(loser.getUniqueId()))); }
     @EventHandler public void quit(PlayerQuitEvent e){ UUID id=e.getPlayer().getUniqueId(); queues.values().forEach(q->q.remove(id)); Match m=find(id); if(m!=null) Bukkit.getScheduler().runTask(this,()->finish(m,m.opponent(id))); }
     private void finish(Match m, UUID winner){ if(!matches.remove(m))return; Player w=Bukkit.getPlayer(winner), loser=Bukkit.getPlayer(m.opponent(winner));
@@ -75,18 +295,110 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
         int win=wp.rating(m.kit()), lose=lp.rating(m.kit()); int wr=getConfig().getInt("win-rating",25), lr=getConfig().getInt("loss-rating",20);
         int newW=win+wr,newL=Math.max(getConfig().getInt("min-rating",0),lose-lr); wp.rating(m.kit(),newW); lp.rating(m.kit(),newL);
         String stamp=Long.toString(System.currentTimeMillis()); wp.history().add(0,stamp+"|"+m.kit()+"|WIN|"+newW+"|"+lp.name()); lp.history().add(0,stamp+"|"+m.kit()+"|LOSS|"+newL+"|"+wp.name()); trim(wp);trim(lp); store.save();
-        if(w!=null){w.sendMessage("§aWIN! §7"+m.kit()+" §8» §a+"+wr+" rating §7(§e"+newW+"§7) §8» §e"+tier(newW)); returnPlayer(w);}
-        if(loser!=null){loser.sendMessage("§cLOSS! §7"+m.kit()+" §8» §c-"+lr+" rating §7(§e"+newL+"§7) §8» §e"+tier(newL)); returnPlayer(loser);}
+        String oldWTier=tier(win), oldLTier=tier(lose), newWTier=tier(newW), newLTier=tier(newL);
+        if(w!=null){ String msg="§a§lVICTORY §8• §e"+m.kit()+" §8• §a+"+wr+" Rating §8• §d"+newWTier+" §7("+newW+")"; w.sendMessage(msg); w.sendTitle("§a§lVICTORY!","§e"+m.kit()+" §7• §a+"+wr+" Rating",5,35,10); action(w,msg); if(!oldWTier.equals(newWTier)) w.sendMessage("§d§lTIER UP! §7→ §e"+newWTier); returnPlayer(w);}
+        if(loser!=null){ String msg="§c§lDEFEAT §8• §e"+m.kit()+" §8• §c-"+lr+" Rating §8• §d"+newLTier+" §7("+newL+")"; loser.sendMessage(msg); loser.sendTitle("§c§lDEFEAT","§e"+m.kit()+" §7• §c-"+lr+" Rating",5,35,10); action(loser,msg); if(!oldLTier.equals(newLTier)) loser.sendMessage("§c§lTIER CHANGE §7→ §e"+newLTier); returnPlayer(loser);}
         updateTag(winner); updateTag(m.opponent(winner));
     }
+    private void action(Player p,String msg){ p.spigot().sendMessage(ChatMessageType.ACTION_BAR,new TextComponent(msg)); }
     private void trim(PlayerData p){while(p.history().size()>20)p.history().remove(p.history().size()-1);}
     private void returnPlayer(Player p){Location l=returnLocations.remove(p.getUniqueId()); if(l!=null)p.teleport(l); p.getInventory().clear(); updateTag(p.getUniqueId());}
     private Match find(UUID id){return matches.stream().filter(m->m.contains(id)).findFirst().orElse(null);}
     private boolean stats(CommandSender s,String[] a){Player p=a.length==0&&s instanceof Player?(Player)s:null; if(a.length>0)p=Bukkit.getPlayerExact(a[0]); if(p==null){s.sendMessage("§cPlayer not found.");return true;} PlayerData d=store.get(p.getUniqueId(),p.getName()); s.sendMessage("§6§lHarbourPVP §8» §f"+d.name()); for(Kit k:Kit.values())s.sendMessage("§e"+k+" §7» §f"+d.rating(k)+" §8» §e"+tier(d.rating(k))); return true;}
     private boolean leaderboard(CommandSender s,String[] a){Kit k=a.length>0?Kit.from(a[0]):Kit.Sword;if(k==null){s.sendMessage("§cUnknown kit.");return true;}List<PlayerData> list=new ArrayList<>(store.all());list.sort((x,y)->Integer.compare(y.rating(k),x.rating(k)));s.sendMessage("§6§l"+k+" Leaderboard");int i=1;for(PlayerData p:list){if(i>10)break;s.sendMessage("§e#"+i+" §f"+p.name()+" §7» §a"+p.rating(k)+" §8("+tier(p.rating(k))+")");i++;}return true;}
     private boolean history(CommandSender s,String[] a){if(!(s instanceof Player p)){s.sendMessage("Players only.");return true;}PlayerData d=store.get(p.getUniqueId(),p.getName());s.sendMessage("§6Recent matches");if(d.history().isEmpty()){s.sendMessage("§7No matches yet.");return true;}d.history().stream().limit(10).forEach(x->{String[] z=x.split("\\|",5);if(z.length>=5)s.sendMessage("§e"+z[1]+" §7» "+(z[2].equals("WIN")?"§aWIN":"§cLOSS")+" §7» §f"+z[3]+" §8vs §f"+z[4]);});return true;}
+    private boolean hasParty(Player p){
+        UUID id=p.getUniqueId();
+        return partyOwner.containsKey(id) || parties.containsKey(id);
+    }
+    private UUID partyOwnerOf(Player p){
+        UUID owner=partyOwner.get(p.getUniqueId());
+        if(owner==null && parties.containsKey(p.getUniqueId())) owner=p.getUniqueId();
+        return owner;
+    }
+    private void createParty(Player p){
+        if(hasParty(p)){p.sendMessage("§cZaten bir partidesin.");return;}
+        parties.put(p.getUniqueId(),new LinkedHashSet<>(Set.of(p.getUniqueId())));
+        partyOwner.put(p.getUniqueId(),p.getUniqueId());
+        p.sendMessage("§a§lParti oluşturuldu! §7Parti menüsünden oyuncu davet edebilirsin.");
+    }
+    private void inviteToParty(Player leader, Player target){
+        UUID owner=partyOwnerOf(leader);
+        if(owner==null){createParty(leader);owner=leader.getUniqueId();}
+        if(!owner.equals(leader.getUniqueId())){leader.sendMessage("§cParti lideri olmalısın.");return;}
+        if(target.getUniqueId().equals(leader.getUniqueId())){leader.sendMessage("§7Zaten partidesin.");return;}
+        if(hasParty(target)){leader.sendMessage("§cBu oyuncu zaten bir partide.");return;}
+        parties.get(owner).add(target.getUniqueId());
+        partyOwner.put(target.getUniqueId(),owner);
+        target.sendMessage("§d§lParti §8» §f"+leader.getName()+" §7seni partiye davet etti ve partiye ekledi.");
+        leader.sendMessage("§a"+target.getName()+" §7partiye eklendi.");
+    }
+    private void leaveParty(Player p){
+        UUID owner=partyOwnerOf(p);
+        if(owner==null){p.sendMessage("§cPartide değilsin.");return;}
+        Set<UUID> members=parties.get(owner);
+        if(owner.equals(p.getUniqueId())){
+            if(members!=null){
+                for(UUID id:members) partyOwner.remove(id);
+                parties.remove(owner);
+            }
+            p.sendMessage("§cParti dağıtıldı.");
+        } else {
+            if(members!=null) members.remove(p.getUniqueId());
+            partyOwner.remove(p.getUniqueId());
+            p.sendMessage("§aPartiden ayrıldın.");
+        }
+    }
+    private void openPartyGui(Player p){
+        if(!hasParty(p)){
+            createParty(p);
+        }
+        UUID owner=partyOwnerOf(p);
+        Set<UUID> members=parties.getOrDefault(owner,new LinkedHashSet<>());
+        Inventory inv=Bukkit.createInventory(null,27,PARTY_TITLE);
+        // border
+        ItemStack filler=new ItemStack(Material.GRAY_STAINED_GLASS_PANE); ItemMeta fm=filler.getItemMeta(); fm.setDisplayName(" "); filler.setItemMeta(fm);
+        for(int i=0;i<27;i++) if(i<9||i>=18||i==9||i==17) inv.setItem(i,filler);
+        ItemStack invite=new ItemStack(Material.PLAYER_HEAD); ItemMeta im=invite.getItemMeta(); im.setDisplayName("§a§lOyuncu Davet Et"); im.setLore(List.of("§7Çevrimiçi oyunculardan birini seç.","§eTıkla → davet menüsü")); invite.setItemMeta(im); inv.setItem(11,invite);
+        ItemStack info=new ItemStack(Material.BOOK); ItemMeta bm=info.getItemMeta(); bm.setDisplayName("§d§lParti Bilgileri"); List<String> lore=new ArrayList<>(); lore.add("§7Lider: §f"+Bukkit.getOfflinePlayer(owner).getName()); lore.add("§7Üye: §f"+members.size()); lore.add(""); for(UUID id:members){Player x=Bukkit.getPlayer(id); lore.add((id.equals(owner)?"§e★ ":"§7• ")+"§f"+(x==null?Bukkit.getOfflinePlayer(id).getName():x.getName()));} bm.setLore(lore); info.setItemMeta(bm); inv.setItem(13,info);
+        ItemStack leave=new ItemStack(owner.equals(p.getUniqueId())?Material.TNT:Material.OAK_DOOR); ItemMeta lm=leave.getItemMeta(); lm.setDisplayName(owner.equals(p.getUniqueId())?"§c§lPartiyi Dağıt":"§c§lPartiden Ayrıl"); leave.setItemMeta(lm); inv.setItem(15,leave);
+        ItemStack close=new ItemStack(Material.BARRIER); ItemMeta cm=close.getItemMeta(); cm.setDisplayName("§cKapat"); close.setItemMeta(cm); inv.setItem(26,close);
+        p.openInventory(inv);
+    }
+    private void openPartyInviteGui(Player p){
+        UUID owner=partyOwnerOf(p);
+        if(owner==null || !owner.equals(p.getUniqueId())){p.sendMessage("§cSadece parti lideri oyuncu davet edebilir.");return;}
+        Inventory inv=Bukkit.createInventory(null,54,PARTY_INVITE_TITLE);
+        int slot=10;
+        org.bukkit.NamespacedKey key=new org.bukkit.NamespacedKey(this,"party-player");
+        for(Player target:Bukkit.getOnlinePlayers()){
+            if(target.equals(p) || hasParty(target)) continue;
+            if(slot>=44)break;
+            ItemStack head=new ItemStack(Material.PLAYER_HEAD); org.bukkit.inventory.meta.SkullMeta sm=(org.bukkit.inventory.meta.SkullMeta)head.getItemMeta(); sm.setOwningPlayer(target); sm.setDisplayName("§a"+target.getName()); sm.setLore(List.of("§7Tıkla: partiye davet et")); sm.getPersistentDataContainer().set(key,org.bukkit.persistence.PersistentDataType.STRING,target.getUniqueId().toString()); head.setItemMeta(sm); inv.setItem(slot,head);
+            slot++; if(slot%9==17)slot+=2;
+        }
+        ItemStack back=new ItemStack(Material.ARROW); ItemMeta bm=back.getItemMeta(); bm.setDisplayName("§cGeri"); back.setItemMeta(bm); inv.setItem(49,back);
+        p.openInventory(inv);
+    }
+
+    private boolean party(CommandSender s,String[] a){
+        if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}
+        if(a.length==0){s.sendMessage("§e/party create|invite <player>|join <player>|leave|list|disband");return true;}
+        String sub=a[0].toLowerCase();
+        UUID owner=partyOwner.get(p.getUniqueId()); if(owner==null && parties.containsKey(p.getUniqueId())) owner=p.getUniqueId();
+        switch(sub){
+            case "create" -> { if(owner!=null){p.sendMessage("§cZaten bir partidesin.");return true;} parties.put(p.getUniqueId(),new LinkedHashSet<>(Set.of(p.getUniqueId()))); partyOwner.put(p.getUniqueId(),p.getUniqueId()); p.sendMessage("§aParti oluşturuldu.");}
+            case "invite" -> { if(owner==null||!owner.equals(p.getUniqueId())){p.sendMessage("§cParti lideri olmalısın.");return true;} if(a.length<2){p.sendMessage("§e/party invite <player>");return true;} Player t=Bukkit.getPlayerExact(a[1]); if(t==null){p.sendMessage("§cOyuncu bulunamadı.");return true;} parties.get(owner).add(t.getUniqueId()); partyOwner.put(t.getUniqueId(),owner); t.sendMessage("§a"+p.getName()+" seni partiye ekledi."); p.sendMessage("§aOyuncu partiye eklendi.");}
+            case "join" -> {p.sendMessage("§7Davetler doğrudan lider tarafından /party invite ile yapılır.");}
+            case "leave" -> { if(owner==null){p.sendMessage("§cPartide değilsin.");return true;} parties.get(owner).remove(p.getUniqueId()); partyOwner.remove(p.getUniqueId()); if(parties.get(owner).size()<=0)parties.remove(owner); p.sendMessage("§aPartiden ayrıldın.");}
+            case "disband" -> { if(owner==null||!owner.equals(p.getUniqueId())){p.sendMessage("§cParti lideri olmalısın.");return true;} for(UUID id:parties.get(owner))partyOwner.remove(id); parties.remove(owner); p.sendMessage("§aParti dağıtıldı.");}
+            case "list" -> { if(owner==null){p.sendMessage("§cPartide değilsin.");return true;} p.sendMessage("§6Parti üyeleri:"); for(UUID id:parties.get(owner)){Player x=Bukkit.getPlayer(id);p.sendMessage("§7- §f"+(x==null?id:x.getName())+(id.equals(owner)?" §e(Lider)":""));}}
+            default -> p.sendMessage("§e/party create|invite <player>|leave|list|disband");
+        } return true;
+    }
+
     private boolean queue(CommandSender s){s.sendMessage("§6§lRanked Queues");for(Kit k:Kit.values())s.sendMessage("§e"+k+" §7» §f"+queues.get(k).size());return true;}
-    private boolean admin(CommandSender s,String[] a){if(!s.hasPermission("harbourpvp.admin")){s.sendMessage("§cNo permission.");return true;}if(a.length==0){s.sendMessage("§e/ht setrating <player> <kit> <rating>");s.sendMessage("§e/ht settier <player> <kit> <tier>");s.sendMessage("§e/ht reset <player> <kit>");s.sendMessage("§e/ht forcematch <player1> <player2> <kit>");s.sendMessage("§e/ht reload");return true;}try{switch(a[0].toLowerCase()){case"setrating"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,Integer.parseInt(a[3]));store.save();updateTag(p.getUniqueId());s.sendMessage("§aRating updated.");return true;}case"settier"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;Integer r=threshold(a[3]);if(r==null){s.sendMessage("§cUnknown tier.");return true;}store.get(p.getUniqueId(),p.getName()).rating(k,r);store.save();updateTag(p.getUniqueId());s.sendMessage("§aTier updated to §e"+a[3]+"§a.");return true;}case"reset"->{if(a.length<3)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,getConfig().getInt("starting-rating",1000));store.save();updateTag(p.getUniqueId());s.sendMessage("§aReset.");return true;}case"forcematch"->{if(a.length<4)break;Player p1=Bukkit.getPlayerExact(a[1]),p2=Bukkit.getPlayerExact(a[2]);Kit k=Kit.from(a[3]);if(p1==null||p2==null||k==null){s.sendMessage("§cInvalid player/kit.");return true;}startMatch(k,p1.getUniqueId(),p2.getUniqueId());return true;}case"reload"-> {reloadConfig();s.sendMessage("§aConfig reloaded.");return true;}}}catch(Exception ex){s.sendMessage("§cInvalid command arguments.");}return true;}
+    private boolean admin(CommandSender s,String[] a){if(!s.hasPermission("harbourpvp.admin")){s.sendMessage("§cNo permission.");return true;}if(a.length==0){s.sendMessage("§e/ht setrating <player> <kit> <rating>");s.sendMessage("§e/ht settier <player> <kit> <tier>");s.sendMessage("§e/ht reset <player> <kit>");s.sendMessage("§e/ht forcematch <player1> <player2> <kit>");s.sendMessage("§e/ht kit edit <kit>");s.sendMessage("§e/ht kit save <kit>");s.sendMessage("§e/ht kit clear <kit>");s.sendMessage("§e/ht reload");return true;}try{switch(a[0].toLowerCase()){case"setrating"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,Integer.parseInt(a[3]));store.save();updateTag(p.getUniqueId());s.sendMessage("§aRating updated.");return true;}case"settier"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;Integer r=threshold(a[3]);if(r==null){s.sendMessage("§cUnknown tier.");return true;}store.get(p.getUniqueId(),p.getName()).rating(k,r);store.save();updateTag(p.getUniqueId());s.sendMessage("§aTier updated to §e"+a[3]+"§a.");return true;}case"reset"->{if(a.length<3)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,getConfig().getInt("starting-rating",1000));store.save();updateTag(p.getUniqueId());s.sendMessage("§aReset.");return true;}case"forcematch"->{if(a.length<4)break;Player p1=Bukkit.getPlayerExact(a[1]),p2=Bukkit.getPlayerExact(a[2]);Kit k=Kit.from(a[3]);if(p1==null||p2==null||k==null){s.sendMessage("§cInvalid player/kit.");return true;}startMatch(k,p1.getUniqueId(),p2.getUniqueId());return true;}case"kit"->{if(a.length<3){s.sendMessage("§e/ht kit edit|save|clear <kit>");return true;}Kit k=Kit.from(a[2]);if(k==null){s.sendMessage("§cUnknown kit.");return true;}switch(a[1].toLowerCase()){case"edit"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}openKitEditor(p,k);return true;}case"save"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}return saveKitFromEditor(p,k);}case"clear"-> {return clearKit(k,s);}}return true;}case"reload"-> {reloadConfig();s.sendMessage("§aConfig reloaded.");return true;}}}catch(Exception ex){s.sendMessage("§cInvalid command arguments.");}return true;}
     private String tier(int rating){String best="HT5";int br=-1;for(Map.Entry<String,Object> e:getConfig().getConfigurationSection("tiers").getValues(false).entrySet()){int t=getConfig().getInt("tiers."+e.getKey());if(t<=rating&&t>=br){br=t;best=e.getKey();}}return best;}
     private Integer threshold(String tier){if(getConfig().contains("tiers."+tier))return getConfig().getInt("tiers."+tier);return null;}
     private Location location(String path){String raw=getConfig().getString(path);if(raw==null)return null;String[] p=raw.split(",");if(p.length<4)return null;World w=Bukkit.getWorld(p[0]);if(w==null)return null;try{return new Location(w,Double.parseDouble(p[1]),Double.parseDouble(p[2]),Double.parseDouble(p[3]),p.length>4?Float.parseFloat(p[4]):0,p.length>5?Float.parseFloat(p[5]):0);}catch(Exception e){return null;}}
