@@ -1,0 +1,65 @@
+# HarbourPVP Ranked configuration
+starting-rating: 1000
+win-rating: 25
+loss-rating: 20
+min-rating: 0
+
+# Rating thresholds. Higher rating = better tier.
+tiers:
+  HT5: 0
+  MT5: 900
+  LT5: 1000
+  HT4: 1100
+  MT4: 1200
+  LT4: 1300
+  HT3: 1400
+  MT3: 1500
+  LT3: 1600
+  HT2: 1700
+  MT2: 1800
+  LT2: 1900
+  HT1: 2000
+  MT1: 2150
+  LT1: 2300
+
+kits:
+  Sword:
+    icon: NETHERITE_SWORD
+    arena-world: world
+    position1: world,0,100,0,0,0
+    position2: world,10,100,0,180,0
+  Axe:
+    icon: NETHERITE_AXE
+    arena-world: world
+    position1: world,0,100,20,0,0
+    position2: world,10,100,20,180,0
+  Mace:
+    icon: MACE
+    arena-world: world
+    position1: world,0,100,40,0,0
+    position2: world,10,100,40,180,0
+  Pot:
+    icon: SPLASH_POTION
+    arena-world: world
+    position1: world,0,100,60,0,0
+    position2: world,10,100,60,180,0
+  NethPot:
+    icon: SPLASH_POTION
+    arena-world: world
+    position1: world,0,100,80,0,0
+    position2: world,10,100,80,180,0
+  UHC:
+    icon: GOLDEN_APPLE
+    arena-world: world
+    position1: world,0,100,100,0,0
+    position2: world,10,100,100,180,0
+  SMP:
+    icon: GRASS_BLOCK
+    arena-world: world
+    position1: world,0,100,120,0,0
+    position2: world,10,100,120,180,0
+  Vanilla:
+    icon: DIAMOND_SWORD
+    arena-world: world
+    position1: world,0,100,140,0,0
+    position2: world,10,100,140,180,0
