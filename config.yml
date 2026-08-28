@@ -1,0 +1,4 @@
+# HarbourPVP data/config
+# arenas and kit loadouts are stored here.
+settings:
+  lobby-world: world

@@ -29,8 +29,6 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private static final String GUI_TITLE = "§8HarbourPVP §7| §6Ranked Kits";
     private static final String EDITOR_PREFIX = "§8HarbourPVP §7| §eKit Editor: ";
     private static final String LOBBY_TITLE = "§8HarbourPVP §7| §6Lobby";
-    private static final String PARTY_TITLE = "§8HarbourPVP §7| §dParti";
-    private static final String PARTY_INVITE_TITLE = "§8HarbourPVP §7| §aOyuncu Davet Et";
     private final Map<UUID, UUID> partyOwner = new HashMap<>();
     private final Map<UUID, Set<UUID>> parties = new HashMap<>();
 
@@ -122,7 +120,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
 
     @EventHandler public void interactLobby(org.bukkit.event.player.PlayerInteractEvent e){
         Player p=e.getPlayer(); if(find(p.getUniqueId())!=null)return; ItemStack it=e.getItem(); if(it==null||!it.hasItemMeta())return; String n=ChatColor.stripColor(it.getItemMeta().getDisplayName());
-        if(n.equals("Sıraya Gir")){e.setCancelled(true);openKitGui(p);} else if(n.equals("Parti Aç")){e.setCancelled(true);openPartyGui(p);} else if(n.equals("İstatistikler")){e.setCancelled(true);stats(p,new String[0]);} else if(n.equals("Kit Düzenleme")){e.setCancelled(true);openKitEditorSelector(p);}
+        if(n.equals("Sıraya Gir")){e.setCancelled(true);openKitGui(p);} else if(n.equals("Parti Aç")){e.setCancelled(true);party(p,new String[]{"create"});} else if(n.equals("İstatistikler")){e.setCancelled(true);stats(p,new String[0]);} else if(n.equals("Kit Düzenleme")){e.setCancelled(true);openKitEditorSelector(p);}
     }
     @EventHandler public void dropLobby(org.bukkit.event.player.PlayerDropItemEvent e){ if(find(e.getPlayer().getUniqueId())==null) e.setCancelled(true); }
 
@@ -132,42 +130,9 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
             e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||e.getCurrentItem()==null)return;
             int slot=e.getRawSlot();
             if(slot==0) openKitGui(p);
-            else if(slot==1) openPartyGui(p);
+            else if(slot==1) party(p,new String[]{"create"});
             else if(slot==4) stats(p,new String[0]);
             else if(slot==8) openKitEditorSelector(p);
-            return;
-        }
-        if (PARTY_TITLE.equals(title)) {
-            e.setCancelled(true);
-            if (!(e.getWhoClicked() instanceof Player p) || e.getCurrentItem() == null) return;
-            int slot=e.getRawSlot();
-            ItemStack item=e.getCurrentItem();
-            if(slot==11){
-                if(!hasParty(p)) createParty(p);
-                openPartyInviteGui(p);
-            } else if(slot==15){
-                if(hasParty(p)) leaveParty(p); else createParty(p);
-                openPartyGui(p);
-            } else if(slot==13){
-                p.closeInventory(); p.sendMessage("§d§lParti §8» §7/party list ile üyeleri görebilirsin.");
-            } else if(slot==26){ p.closeInventory(); }
-            return;
-        }
-        if (PARTY_INVITE_TITLE.equals(title)) {
-            e.setCancelled(true);
-            if (!(e.getWhoClicked() instanceof Player p) || e.getCurrentItem() == null) return;
-            if(e.getRawSlot()==49){openPartyGui(p);return;}
-            if(e.getRawSlot() < 0 || e.getRawSlot() >= e.getView().getTopInventory().getSize()) return;
-            ItemMeta meta=e.getCurrentItem().getItemMeta();
-            if(meta==null || meta.getPersistentDataContainer()==null) return;
-            String raw=meta.getPersistentDataContainer().get(new org.bukkit.NamespacedKey(this,"party-player"), org.bukkit.persistence.PersistentDataType.STRING);
-            if(raw==null)return;
-            try{
-                Player target=Bukkit.getPlayer(UUID.fromString(raw));
-                if(target==null){p.sendMessage("§cOyuncu artık çevrimiçi değil.");return;}
-                inviteToParty(p,target);
-                openPartyInviteGui(p);
-            }catch(Exception ignored){}
             return;
         }
         if ("§8HarbourPVP §7| §dKit Düzenleme".equals(title)){
@@ -307,80 +272,6 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private boolean stats(CommandSender s,String[] a){Player p=a.length==0&&s instanceof Player?(Player)s:null; if(a.length>0)p=Bukkit.getPlayerExact(a[0]); if(p==null){s.sendMessage("§cPlayer not found.");return true;} PlayerData d=store.get(p.getUniqueId(),p.getName()); s.sendMessage("§6§lHarbourPVP §8» §f"+d.name()); for(Kit k:Kit.values())s.sendMessage("§e"+k+" §7» §f"+d.rating(k)+" §8» §e"+tier(d.rating(k))); return true;}
     private boolean leaderboard(CommandSender s,String[] a){Kit k=a.length>0?Kit.from(a[0]):Kit.Sword;if(k==null){s.sendMessage("§cUnknown kit.");return true;}List<PlayerData> list=new ArrayList<>(store.all());list.sort((x,y)->Integer.compare(y.rating(k),x.rating(k)));s.sendMessage("§6§l"+k+" Leaderboard");int i=1;for(PlayerData p:list){if(i>10)break;s.sendMessage("§e#"+i+" §f"+p.name()+" §7» §a"+p.rating(k)+" §8("+tier(p.rating(k))+")");i++;}return true;}
     private boolean history(CommandSender s,String[] a){if(!(s instanceof Player p)){s.sendMessage("Players only.");return true;}PlayerData d=store.get(p.getUniqueId(),p.getName());s.sendMessage("§6Recent matches");if(d.history().isEmpty()){s.sendMessage("§7No matches yet.");return true;}d.history().stream().limit(10).forEach(x->{String[] z=x.split("\\|",5);if(z.length>=5)s.sendMessage("§e"+z[1]+" §7» "+(z[2].equals("WIN")?"§aWIN":"§cLOSS")+" §7» §f"+z[3]+" §8vs §f"+z[4]);});return true;}
-    private boolean hasParty(Player p){
-        UUID id=p.getUniqueId();
-        return partyOwner.containsKey(id) || parties.containsKey(id);
-    }
-    private UUID partyOwnerOf(Player p){
-        UUID owner=partyOwner.get(p.getUniqueId());
-        if(owner==null && parties.containsKey(p.getUniqueId())) owner=p.getUniqueId();
-        return owner;
-    }
-    private void createParty(Player p){
-        if(hasParty(p)){p.sendMessage("§cZaten bir partidesin.");return;}
-        parties.put(p.getUniqueId(),new LinkedHashSet<>(Set.of(p.getUniqueId())));
-        partyOwner.put(p.getUniqueId(),p.getUniqueId());
-        p.sendMessage("§a§lParti oluşturuldu! §7Parti menüsünden oyuncu davet edebilirsin.");
-    }
-    private void inviteToParty(Player leader, Player target){
-        UUID owner=partyOwnerOf(leader);
-        if(owner==null){createParty(leader);owner=leader.getUniqueId();}
-        if(!owner.equals(leader.getUniqueId())){leader.sendMessage("§cParti lideri olmalısın.");return;}
-        if(target.getUniqueId().equals(leader.getUniqueId())){leader.sendMessage("§7Zaten partidesin.");return;}
-        if(hasParty(target)){leader.sendMessage("§cBu oyuncu zaten bir partide.");return;}
-        parties.get(owner).add(target.getUniqueId());
-        partyOwner.put(target.getUniqueId(),owner);
-        target.sendMessage("§d§lParti §8» §f"+leader.getName()+" §7seni partiye davet etti ve partiye ekledi.");
-        leader.sendMessage("§a"+target.getName()+" §7partiye eklendi.");
-    }
-    private void leaveParty(Player p){
-        UUID owner=partyOwnerOf(p);
-        if(owner==null){p.sendMessage("§cPartide değilsin.");return;}
-        Set<UUID> members=parties.get(owner);
-        if(owner.equals(p.getUniqueId())){
-            if(members!=null){
-                for(UUID id:members) partyOwner.remove(id);
-                parties.remove(owner);
-            }
-            p.sendMessage("§cParti dağıtıldı.");
-        } else {
-            if(members!=null) members.remove(p.getUniqueId());
-            partyOwner.remove(p.getUniqueId());
-            p.sendMessage("§aPartiden ayrıldın.");
-        }
-    }
-    private void openPartyGui(Player p){
-        if(!hasParty(p)){
-            createParty(p);
-        }
-        UUID owner=partyOwnerOf(p);
-        Set<UUID> members=parties.getOrDefault(owner,new LinkedHashSet<>());
-        Inventory inv=Bukkit.createInventory(null,27,PARTY_TITLE);
-        // border
-        ItemStack filler=new ItemStack(Material.GRAY_STAINED_GLASS_PANE); ItemMeta fm=filler.getItemMeta(); fm.setDisplayName(" "); filler.setItemMeta(fm);
-        for(int i=0;i<27;i++) if(i<9||i>=18||i==9||i==17) inv.setItem(i,filler);
-        ItemStack invite=new ItemStack(Material.PLAYER_HEAD); ItemMeta im=invite.getItemMeta(); im.setDisplayName("§a§lOyuncu Davet Et"); im.setLore(List.of("§7Çevrimiçi oyunculardan birini seç.","§eTıkla → davet menüsü")); invite.setItemMeta(im); inv.setItem(11,invite);
-        ItemStack info=new ItemStack(Material.BOOK); ItemMeta bm=info.getItemMeta(); bm.setDisplayName("§d§lParti Bilgileri"); List<String> lore=new ArrayList<>(); lore.add("§7Lider: §f"+Bukkit.getOfflinePlayer(owner).getName()); lore.add("§7Üye: §f"+members.size()); lore.add(""); for(UUID id:members){Player x=Bukkit.getPlayer(id); lore.add((id.equals(owner)?"§e★ ":"§7• ")+"§f"+(x==null?Bukkit.getOfflinePlayer(id).getName():x.getName()));} bm.setLore(lore); info.setItemMeta(bm); inv.setItem(13,info);
-        ItemStack leave=new ItemStack(owner.equals(p.getUniqueId())?Material.TNT:Material.OAK_DOOR); ItemMeta lm=leave.getItemMeta(); lm.setDisplayName(owner.equals(p.getUniqueId())?"§c§lPartiyi Dağıt":"§c§lPartiden Ayrıl"); leave.setItemMeta(lm); inv.setItem(15,leave);
-        ItemStack close=new ItemStack(Material.BARRIER); ItemMeta cm=close.getItemMeta(); cm.setDisplayName("§cKapat"); close.setItemMeta(cm); inv.setItem(26,close);
-        p.openInventory(inv);
-    }
-    private void openPartyInviteGui(Player p){
-        UUID owner=partyOwnerOf(p);
-        if(owner==null || !owner.equals(p.getUniqueId())){p.sendMessage("§cSadece parti lideri oyuncu davet edebilir.");return;}
-        Inventory inv=Bukkit.createInventory(null,54,PARTY_INVITE_TITLE);
-        int slot=10;
-        org.bukkit.NamespacedKey key=new org.bukkit.NamespacedKey(this,"party-player");
-        for(Player target:Bukkit.getOnlinePlayers()){
-            if(target.equals(p) || hasParty(target)) continue;
-            if(slot>=44)break;
-            ItemStack head=new ItemStack(Material.PLAYER_HEAD); org.bukkit.inventory.meta.SkullMeta sm=(org.bukkit.inventory.meta.SkullMeta)head.getItemMeta(); sm.setOwningPlayer(target); sm.setDisplayName("§a"+target.getName()); sm.setLore(List.of("§7Tıkla: partiye davet et")); sm.getPersistentDataContainer().set(key,org.bukkit.persistence.PersistentDataType.STRING,target.getUniqueId().toString()); head.setItemMeta(sm); inv.setItem(slot,head);
-            slot++; if(slot%9==17)slot+=2;
-        }
-        ItemStack back=new ItemStack(Material.ARROW); ItemMeta bm=back.getItemMeta(); bm.setDisplayName("§cGeri"); back.setItemMeta(bm); inv.setItem(49,back);
-        p.openInventory(inv);
-    }
-
     private boolean party(CommandSender s,String[] a){
         if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}
         if(a.length==0){s.sendMessage("§e/party create|invite <player>|join <player>|leave|list|disband");return true;}

@@ -1,38 +1,17 @@
 name: HarbourPVP
 version: '${version}'
-main: com.harbourpvp.ranked.HarbourPVP
+main: com.harbourpvp.HarbourPVP
 api-version: '1.21'
 author: HarbourPVP
-website: https://harbourtierlistr.com
-
-description: Ranked kit-based PvP matchmaking and tier system for HarbourPVP.
-
+description: MCPVP/PvPHQ inspired ranked PvP, parties, queues, arenas and kit editor.
 commands:
   play:
-    description: Open the ranked kit menu or queue for a kit.
-    usage: /play [kit]
-  stats:
-    description: Show ranked stats.
-    usage: /stats [player]
-  leaderboard:
-    description: Show the leaderboard for a kit.
-    usage: /leaderboard [kit]
-    aliases: [lb, top]
-  history:
-    description: Show your recent ranked matches.
-    usage: /history [player]
-  queue:
-    description: Show ranked queues.
-    usage: /queue
-  party:
-    description: Create and manage parties.
-    usage: /party <create|invite|leave|list|disband>
+    description: Open the HarbourPVP queue menu
   ht:
-    description: HarbourPVP admin commands.
-    usage: /ht <setrating|settier|reset|forcematch|kit|reload>
+    description: HarbourPVP administration and kit commands
     permission: harbourpvp.admin
-
+  party:
+    description: Open and manage your party
 permissions:
   harbourpvp.admin:
-    description: HarbourPVP administration permission.
     default: op
