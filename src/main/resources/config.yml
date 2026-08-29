@@ -1,5 +1,5 @@
 # HarbourPVP Ranked configuration
-starting-rating: 1000
+starting-rating: 0
 win-rating: 25
 loss-rating: 20
 min-rating: 0
@@ -24,14 +24,14 @@ tiers:
 
 kits:
   Sword:
-    icon: NETHERITE_SWORD
+    icon: DIAMOND_SWORD
     allow-block-place: false
     allow-block-break: false
     arena-world: world
     position1: world,0,100,0,0,0
     position2: world,10,100,0,180,0
   Axe:
-    icon: NETHERITE_AXE
+    icon: DIAMOND_AXE
     allow-block-place: false
     allow-block-break: false
     arena-world: world
@@ -52,7 +52,7 @@ kits:
     position1: world,0,100,60,0,0
     position2: world,10,100,60,180,0
   NethPot:
-    icon: SPLASH_POTION
+    icon: NETHERITE_SWORD
     allow-block-place: false
     allow-block-break: false
     arena-world: world
@@ -65,24 +65,25 @@ kits:
     arena-world: world
     position1: world,0,100,100,0,0
     position2: world,10,100,100,180,0
-  Crystal:
-    icon: END_CRYSTAL
-    arena-world: world
-    position1: world,0,100,160,0,0
-    position2: world,10,100,160,180,0
-    allow-block-place: true
-    allow-block-break: true
   SMP:
-    icon: GRASS_BLOCK
+    icon: SHIELD
     allow-block-place: true
     allow-block-break: true
     arena-world: world
     position1: world,0,100,120,0,0
     position2: world,10,100,120,180,0
   Vanilla:
-    icon: DIAMOND_SWORD
+    icon: END_CRYSTAL
     allow-block-place: false
     allow-block-break: false
     arena-world: world
     position1: world,0,100,140,0,0
     position2: world,10,100,140,180,0
+
+  Spear:
+    icon: NETHERITE_SPEAR
+    allow-block-place: false
+    allow-block-break: false
+    arena-world: world
+    position1: world,0,100,180,0,0
+    position2: world,10,100,180,180,0

@@ -18,9 +18,9 @@ The saved loadout is stored in `plugins/HarbourPVP/config.yml` under `kits.<Kit>
 
 ## Ranked kits
 
-Sword, Axe, Mace, Pot, NethPot, UHC, Crystal, SMP, Vanilla.
+Sword, Axe, Mace, Pot, NethPot, SMP, UHC, Vanilla, Spear.
 
-Crystal, UHC and SMP have block placement/breaking enabled by default. Other kits are configurable with `allow-block-place` and `allow-block-break`.
+UHC and SMP have block placement/breaking enabled by default. Other kits are configurable with `allow-block-place` and `allow-block-break`.
 
 ## Build
 

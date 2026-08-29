@@ -12,6 +12,8 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.PotionMeta;
+import org.bukkit.potion.PotionType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -26,9 +28,10 @@ public class HarbourPVP extends JavaPlugin implements Listener, CommandExecutor,
     private final Map<UUID, Match> matches = new HashMap<>();
     private final Map<String, Arena> arenas = new HashMap<>();
     private final Map<String, Map<UUID,Integer>> ratings = new HashMap<>();
+    private final Map<String, Map<UUID,Integer>> placements = new HashMap<>();
     private final Set<UUID> inEditor = new HashSet<>();
     private BukkitTask matcher;
-    private final List<String> kits = List.of("Sword","Axe","Mace","Pot","NethPot","UHC","Crystal","SMP","Vanilla");
+    private final List<String> kits = List.of("Sword","Axe","Mace","Pot","NethPot","SMP","UHC","Vanilla","Spear");
 
     @Override public void onEnable() {
         saveDefaultConfig();
@@ -59,8 +62,7 @@ public class HarbourPVP extends JavaPlugin implements Listener, CommandExecutor,
     }
     private void openKitMenu(Player p, boolean party) {
         Inventory inv=Bukkit.createInventory(null,27,party?"HarbourPVP • Party Queue":"HarbourPVP • Ranked Queue"); fill(inv);
-        Material[] mats={Material.DIAMOND_SWORD,Material.DIAMOND_AXE,Material.MACE,Material.POTION,Material.NETHERITE_CHESTPLATE,Material.GOLDEN_APPLE,Material.END_CRYSTAL,Material.GRASS_BLOCK,Material.SHIELD};
-        for(int i=0;i<kits.size();i++) { String k=kits.get(i); int r=rating(p,k); inv.setItem(i,item(mats[i],"§f"+k,"§7Rating: §b"+r,"§7Tier: §e"+tier(r),"§7Queue: §f"+queues.getOrDefault(k,new LinkedList<>()).size(),"","§aTıkla: sıraya gir")); }
+        for(int i=0;i<kits.size();i++) { String k=kits.get(i); int r=rating(p,k); int pl=placements(p,k); inv.setItem(i,kitIcon(k,"§f"+k,"§7Rating: §b"+r,"§7Tier: §e"+tier(p,k),"§7Placement: §f"+pl+"/5","§7Queue: §f"+queues.getOrDefault(k,new LinkedList<>()).size(),"","§aTıkla: sıraya gir")); }
         inv.setItem(22,item(Material.ARROW,"§cGeri")); p.openInventory(inv);
     }
     private void openParty(Player p) {
@@ -84,7 +86,7 @@ public class HarbourPVP extends JavaPlugin implements Listener, CommandExecutor,
     }
     private void openStats(Player p) {
         Inventory inv=Bukkit.createInventory(null,27,"HarbourPVP • İstatistikler"); fill(inv); int x=0;
-        for(String k:kits) { int r=rating(p,k); inv.setItem(x++,item(Material.PAPER,"§f"+k,"§7Rating: §b"+r,"§7Tier: §e"+tier(r))); }
+        for(String k:kits) { int r=rating(p,k); inv.setItem(x++,kitIcon(k,"§f"+k,"§7Rating: §b"+r,"§7Tier: §e"+tier(p,k),"§7Placement: §f"+placements(p,k)+"/5")); }
         inv.setItem(22,item(Material.ARROW,"§cGeri")); p.openInventory(inv);
     }
 
@@ -94,7 +96,7 @@ public class HarbourPVP extends JavaPlugin implements Listener, CommandExecutor,
     @EventHandler public void death(PlayerDeathEvent e){ Player dead=e.getEntity(); Match m=matches.get(dead.getUniqueId()); if(m==null)return; getServer().getScheduler().runTask(this,()->finishMatch(m, m.a.contains(dead)?m.b:m.a)); }
     @EventHandler public void blockPlace(BlockPlaceEvent e){ Match m=matches.get(e.getPlayer().getUniqueId()); if(m!=null && !allowsBlocks(m.kit)) e.setCancelled(true); }
     @EventHandler public void blockBreak(BlockBreakEvent e){ Match m=matches.get(e.getPlayer().getUniqueId()); if(m!=null && !allowsBlocks(m.kit)) e.setCancelled(true); }
-    private boolean allowsBlocks(String kit){ return kit.equalsIgnoreCase("Crystal")||kit.equalsIgnoreCase("UHC")||kit.equalsIgnoreCase("SMP"); }
+    private boolean allowsBlocks(String kit){ return kit.equalsIgnoreCase("UHC")||kit.equalsIgnoreCase("SMP"); }
 
     @EventHandler public void click(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)) return;
@@ -197,16 +199,26 @@ public class HarbourPVP extends JavaPlugin implements Listener, CommandExecutor,
     private void finishMatch(Match m,List<Player> winners){
         if(m.all().stream().noneMatch(p->matches.get(p.getUniqueId())==m)) return;
         Set<UUID> win=new HashSet<>(); for(Player p:winners)win.add(p.getUniqueId());
-        for(Player p:m.all()){ int old=rating(p,m.kit); int delta=win.contains(p.getUniqueId())?25:-20; int nr=Math.max(0,old+delta); ratings.computeIfAbsent(m.kit,k->new HashMap<>()).put(p.getUniqueId(),nr); String msg=win.contains(p.getUniqueId())?"§aVICTORY":"§cDEFEAT"; p.sendActionBar(msg+" §8• §f"+m.kit+" §8• "+(delta>0?"§a+":"§c")+delta+" Rating §8• §e"+tier(nr)+" §7("+nr+")"); p.getInventory().clear(); giveLobbyItems(p); p.teleport(p.getWorld().getSpawnLocation()); matches.remove(p.getUniqueId()); } saveRatings();
+        for(Player p:m.all()){ int old=rating(p,m.kit); String before=tier(p,m.kit); int delta=win.contains(p.getUniqueId())?25:-20; int nr=Math.max(0,old+delta); ratings.computeIfAbsent(m.kit,k->new HashMap<>()).put(p.getUniqueId(),nr); int pl=placements(p,m.kit); if(pl<5) placements.computeIfAbsent(m.kit,k->new HashMap<>()).put(p.getUniqueId(),pl+1); String after=tier(p,m.kit); String msg=win.contains(p.getUniqueId())?"§aVICTORY":"§cDEFEAT"; String rankText=after.equals("Unranked")?"§eUnranked §7(Placement "+(pl+1)+"/5)":"§e"+after+" §7("+nr+")"; p.sendActionBar(msg+" §8• §f"+m.kit+" §8• "+(delta>0?"§a+":"§c")+delta+" Rating §8• "+rankText); if(!before.equals(after)&&!after.equals("Unranked"))p.sendMessage("§6§lTIER PLACEMENT §e"+m.kit+" §7→ §a"+after); p.getInventory().clear(); giveLobbyItems(p); p.teleport(p.getWorld().getSpawnLocation()); matches.remove(p.getUniqueId()); } saveRatings();
     }
-    private int rating(Player p,String kit){return ratings.computeIfAbsent(kit,k->new HashMap<>()).getOrDefault(p.getUniqueId(),1000);}
-    private String tier(int r){if(r>=2400)return"LT1";if(r>=2200)return"MT1";if(r>=2000)return"HT1";if(r>=1800)return"LT2";if(r>=1650)return"MT2";if(r>=1500)return"HT2";if(r>=1350)return"LT3";if(r>=1200)return"MT3";if(r>=1100)return"HT3";if(r>=1000)return"LT4";if(r>=900)return"MT4";return"HT5";}
+    private int rating(Player p,String kit){return ratings.computeIfAbsent(kit,k->new HashMap<>()).getOrDefault(p.getUniqueId(),getConfig().getInt("starting-rating",0));}
+    private int placements(Player p,String kit){return placements.computeIfAbsent(kit,k->new HashMap<>()).getOrDefault(p.getUniqueId(),0);}
+    private String tier(Player p,String kit){if(placements(p,kit)<5)return"Unranked";return tierFromRating(rating(p,kit));}
+    private String tierFromRating(int r){if(r>=2400)return"LT1";if(r>=2200)return"MT1";if(r>=2000)return"HT1";if(r>=1800)return"LT2";if(r>=1650)return"MT2";if(r>=1500)return"HT2";if(r>=1350)return"LT3";if(r>=1200)return"MT3";if(r>=1100)return"HT3";if(r>=1000)return"LT4";if(r>=900)return"MT4";if(r>=800)return"LT5";if(r>=700)return"MT5";return"HT5";}
+    private ItemStack kitIcon(String kit,String name,String... lore){Material m; if(kit.equalsIgnoreCase("Pot")){ItemStack i=new ItemStack(Material.POTION);PotionMeta pm=(PotionMeta)i.getItemMeta();pm.setBasePotionType(PotionType.INSTANT_HEALTH);pm.setDisplayName(name);pm.setLore(Arrays.asList(lore));i.setItemMeta(pm);return i;} if(kit.equalsIgnoreCase("Spear")){m=Material.matchMaterial("NETHERITE_SPEAR");if(m==null)m=Material.TRIDENT;}else if(kit.equalsIgnoreCase("Sword"))m=Material.DIAMOND_SWORD;else if(kit.equalsIgnoreCase("Axe"))m=Material.DIAMOND_AXE;else if(kit.equalsIgnoreCase("Mace"))m=Material.MACE;else if(kit.equalsIgnoreCase("NethPot"))m=Material.NETHERITE_SWORD;else if(kit.equalsIgnoreCase("SMP"))m=Material.SHIELD;else if(kit.equalsIgnoreCase("UHC"))m=Material.GOLDEN_APPLE;else if(kit.equalsIgnoreCase("Vanilla"))m=Material.END_CRYSTAL;else m=Material.BOOK;return item(m,name,lore);}
+    private String tier(int r){return tierFromRating(r);}
+
     private void loadArenas(){if(!getConfig().isConfigurationSection("arenas"))return;for(String n:getConfig().getConfigurationSection("arenas").getKeys(false)){String k=getConfig().getString("arenas."+n+".kit",n);Location a=loc(getConfig().getString("arenas."+n+".spawn1")),b=loc(getConfig().getString("arenas."+n+".spawn2"));arenas.put(n,new Arena(n,k,a,b));}}
     private void saveArenas(){for(Arena a:arenas.values()){String p="arenas."+a.name;getConfig().set(p+".kit",a.kit);getConfig().set(p+".spawn1",s(a.a));getConfig().set(p+".spawn2",s(a.b));}saveConfig();}
     private Location loc(String x){if(x==null)return null;String[] q=x.split(",");return Bukkit.getWorld(q[0])==null?null:new Location(Bukkit.getWorld(q[0]),Double.parseDouble(q[1]),Double.parseDouble(q[2]),Double.parseDouble(q[3]),Float.parseFloat(q[4]),Float.parseFloat(q[5]));}
     private String s(Location l){return l==null?null:l.getWorld().getName()+","+l.getX()+","+l.getY()+","+l.getZ()+","+l.getYaw()+","+l.getPitch();}
-    private void loadRatings(){ }
-    private void saveRatings(){ }
+    private void loadRatings(){
+        if(!getConfig().isConfigurationSection("players"))return;
+        for(String us:getConfig().getConfigurationSection("players").getKeys(false)){try{UUID u=UUID.fromString(us);for(String k:kits){String base="players."+us+"."+k;int r=getConfig().getInt(base+".rating",0),pl=getConfig().getInt(base+".placements",0);ratings.computeIfAbsent(k,x->new HashMap<>()).put(u,r);placements.computeIfAbsent(k,x->new HashMap<>()).put(u,pl);}}catch(IllegalArgumentException ignored){}}
+    }
+    private void saveRatings(){
+        for(String k:kits){Map<UUID,Integer> rm=ratings.getOrDefault(k,Collections.emptyMap());Map<UUID,Integer> pm=placements.getOrDefault(k,Collections.emptyMap());for(UUID u:rm.keySet()){String base="players."+u+"."+k;getConfig().set(base+".rating",rm.get(u));getConfig().set(base+".placements",pm.getOrDefault(u,0));}} saveConfig();
+    }
 
     @Override public boolean onCommand(CommandSender s,Command c,String label,String[] a){
         if(c.getName().equalsIgnoreCase("play")){if(s instanceof Player p)openLobby(p);return true;}
