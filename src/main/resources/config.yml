@@ -1,10 +1,9 @@
-# HarbourPVP Ranked configuration
-starting-rating: 0
+starting-rating: 1000
 win-rating: 25
 loss-rating: 20
 min-rating: 0
+placement-matches: 5
 
-# Rating thresholds. Higher rating = better tier.
 tiers:
   HT5: 0
   MT5: 900
@@ -21,69 +20,13 @@ tiers:
   HT1: 2000
   MT1: 2150
   LT1: 2300
-
 kits:
-  Sword:
-    icon: DIAMOND_SWORD
-    allow-block-place: false
-    allow-block-break: false
-    arena-world: world
-    position1: world,0,100,0,0,0
-    position2: world,10,100,0,180,0
-  Axe:
-    icon: DIAMOND_AXE
-    allow-block-place: false
-    allow-block-break: false
-    arena-world: world
-    position1: world,0,100,20,0,0
-    position2: world,10,100,20,180,0
-  Mace:
-    icon: MACE
-    allow-block-place: false
-    allow-block-break: false
-    arena-world: world
-    position1: world,0,100,40,0,0
-    position2: world,10,100,40,180,0
-  Pot:
-    icon: SPLASH_POTION
-    allow-block-place: false
-    allow-block-break: false
-    arena-world: world
-    position1: world,0,100,60,0,0
-    position2: world,10,100,60,180,0
-  NethPot:
-    icon: NETHERITE_SWORD
-    allow-block-place: false
-    allow-block-break: false
-    arena-world: world
-    position1: world,0,100,80,0,0
-    position2: world,10,100,80,180,0
-  UHC:
-    icon: GOLDEN_APPLE
-    allow-block-place: true
-    allow-block-break: true
-    arena-world: world
-    position1: world,0,100,100,0,0
-    position2: world,10,100,100,180,0
-  SMP:
-    icon: SHIELD
-    allow-block-place: true
-    allow-block-break: true
-    arena-world: world
-    position1: world,0,100,120,0,0
-    position2: world,10,100,120,180,0
-  Vanilla:
-    icon: END_CRYSTAL
-    allow-block-place: false
-    allow-block-break: false
-    arena-world: world
-    position1: world,0,100,140,0,0
-    position2: world,10,100,140,180,0
-
-  Spear:
-    icon: NETHERITE_SPEAR
-    allow-block-place: false
-    allow-block-break: false
-    arena-world: world
-    position1: world,0,100,180,0,0
-    position2: world,10,100,180,180,0
+  Sword: {icon: DIAMOND_SWORD, allow-block-place: false, allow-block-break: false}
+  Axe: {icon: DIAMOND_AXE, allow-block-place: false, allow-block-break: false}
+  Mace: {icon: MACE, allow-block-place: false, allow-block-break: false}
+  Pot: {icon: POTION, allow-block-place: false, allow-block-break: false}
+  NethPot: {icon: NETHERITE_SWORD, allow-block-place: false, allow-block-break: false}
+  SMP: {icon: SHIELD, allow-block-place: true, allow-block-break: true}
+  UHC: {icon: GOLDEN_APPLE, allow-block-place: true, allow-block-break: true}
+  Vanilla: {icon: END_CRYSTAL, allow-block-place: true, allow-block-break: true}
+  Spear: {icon: TRIDENT, allow-block-place: false, allow-block-break: false}

@@ -1,27 +1,31 @@
-# HarbourPVP Ranked — SimpleDuels-style GUI + Kit Editor
+# HarbourPVP 1.0.6
 
-Paper 1.21.x plugin. The `/play` menu contains ranked kits and queues. Kit loadouts can be created/edited in-game without editing Java or YAML item lists.
+Paper 1.21.x ranked PvP plugin.
 
-## Kit Editor
-
-1. Give yourself `harbourpvp.admin` (OP has it by default).
-2. Put the exact MCPVP-style loadout you want into your own inventory, including armor and offhand.
-3. Run:
-   `/ht kit edit <kit>`
-4. The editor opens. It can display an already-saved loadout.
-5. To save the inventory currently shown in the editor:
-   `/ht kit save <kit>`
-6. To reset that kit to the built-in fallback:
-   `/ht kit clear <kit>`
-
-The saved loadout is stored in `plugins/HarbourPVP/config.yml` under `kits.<Kit>.items` and survives restarts.
-
-## Ranked kits
-
+## Kits
 Sword, Axe, Mace, Pot, NethPot, SMP, UHC, Vanilla, Spear.
+Crystal is removed.
 
-UHC and SMP have block placement/breaking enabled by default. Other kits are configurable with `allow-block-place` and `allow-block-break`.
+GUI icons:
+- Sword: Diamond Sword
+- Axe: Diamond Axe
+- Mace: Mace
+- Pot: Potion
+- NethPot: Netherite Sword
+- SMP: Shield
+- UHC: Golden Apple
+- Vanilla: End Crystal
+- Spear: Trident fallback for APIs without a Netherite Spear material
+
+## Ranked
+Each kit has independent rating and placement progress. New players start **Unranked** on every kit. The first 5 ranked matches for each kit are placements; after 5, the kit receives its tier based on rating.
+
+## Arena commands
+/ht arena create <arena>
+/ht arena set <arena> 1
+/ht arena set <arena> 2
+/ht arena delete <arena>
+/ht arena list
 
 ## Build
-
-Use the included GitHub Actions workflow (`.github/workflows/build.yml`). The workflow builds the plugin and uploads the JAR as an artifact.
+GitHub Actions provisions Gradle 8.10.2 and Java 21 automatically. No local Gradle installation is required.

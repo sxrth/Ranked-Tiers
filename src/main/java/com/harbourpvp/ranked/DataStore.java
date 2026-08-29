@@ -25,7 +25,7 @@ public class DataStore {
         for (PlayerData p : players.values()) {
             String base = "players." + p.uuid();
             y.set(base + ".name", p.name());
-            for (Kit kit : Kit.values()) y.set(base + ".ratings." + kit.name(), p.rating(kit));
+            for (Kit kit : Kit.values()) { y.set(base + ".ratings." + kit.name(), p.rating(kit)); y.set(base + ".placements." + kit.name(), p.placements(kit)); }
             y.set(base + ".history", p.history());
         }
         try { y.save(file); } catch (IOException e) { plugin.getLogger().severe("Could not save data.yml: " + e.getMessage()); }
@@ -40,7 +40,7 @@ public class DataStore {
                 UUID id = UUID.fromString(key);
                 String name = y.getString("players." + key + ".name", "Unknown");
                 PlayerData p = new PlayerData(id, name, plugin.getConfig().getInt("starting-rating", 1000));
-                for (Kit kit : Kit.values()) p.rating(kit, y.getInt("players." + key + ".ratings." + kit.name(), p.rating(kit)));
+                for (Kit kit : Kit.values()) { p.rating(kit, y.getInt("players." + key + ".ratings." + kit.name(), p.rating(kit))); p.placements(kit, y.getInt("players." + key + ".placements." + kit.name(), p.placements(kit))); }
                 p.history().addAll(y.getStringList("players." + key + ".history"));
                 players.put(id, p);
             } catch (IllegalArgumentException ignored) {}

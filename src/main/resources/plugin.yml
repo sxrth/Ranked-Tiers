@@ -1,17 +1,25 @@
 name: HarbourPVP
 version: '${version}'
-main: com.harbourpvp.HarbourPVP
+main: com.harbourpvp.ranked.HarbourPVP
 api-version: '1.21'
 author: HarbourPVP
-description: MCPVP/PvPHQ inspired ranked PvP, parties, queues, arenas and kit editor.
+description: MCPVP/PvPHQ inspired ranked PvP with kits, placements, parties, queues, arenas and kit editor.
 commands:
   play:
     description: Open the HarbourPVP queue menu
+  stats:
+    description: View ranked statistics
+  leaderboard:
+    description: View kit leaderboard
+  history:
+    description: View match history
+  queue:
+    description: View queue status
+  party:
+    description: Open and manage your party
   ht:
     description: HarbourPVP administration and kit commands
     permission: harbourpvp.admin
-  party:
-    description: Open and manage your party
 permissions:
   harbourpvp.admin:
     default: op

@@ -19,6 +19,6 @@ if errorlevel 1 (
 echo.
 echo ========================================
 echo BUILD SUCCESSFUL!
-echo JAR: build\libs\HarbourPVP-1.0.0.jar
+echo JAR: build\libs\HarbourPVP-1.0.6.jar
 echo ========================================
 pause
