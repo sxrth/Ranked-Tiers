@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.*;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.PlayerInventory;
@@ -32,6 +33,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private final Map<UUID, UUID> partyOwner = new HashMap<>();
     private final Map<UUID, Set<UUID>> parties = new HashMap<>();
     private final Map<UUID, Kit> selectedKit = new HashMap<>();
+    private final Map<UUID, String> activeArena = new HashMap<>();
 
     @Override public void onEnable() {
         saveDefaultConfig(); store = new DataStore(this);
@@ -124,7 +126,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
 
     @EventHandler public void interactLobby(org.bukkit.event.player.PlayerInteractEvent e){
         Player p=e.getPlayer(); if(find(p.getUniqueId())!=null)return; ItemStack it=e.getItem(); if(it==null||!it.hasItemMeta())return; String n=ChatColor.stripColor(it.getItemMeta().getDisplayName());
-        if(n.equals("Sıraya Gir")){e.setCancelled(true);openKitGui(p);} else if(n.equals("Parti Aç")){e.setCancelled(true);party(p,new String[]{"create"});} else if(n.equals("İstatistikler")){e.setCancelled(true);stats(p,new String[0]);} else if(n.equals("Kit Düzenleme")){e.setCancelled(true);openKitEditorSelector(p);}
+        if(n.equals("Sıraya Gir")){e.setCancelled(true);openKitGui(p);} else if(n.equals("Parti Aç")){e.setCancelled(true);party(p,new String[]{"gui"});} else if(n.equals("İstatistikler")){e.setCancelled(true);stats(p,new String[0]);} else if(n.equals("Kit Düzenleme")){e.setCancelled(true);openKitEditorSelector(p);}
     }
     @EventHandler public void dropLobby(org.bukkit.event.player.PlayerDropItemEvent e){ if(find(e.getPlayer().getUniqueId())==null) e.setCancelled(true); }
 
@@ -134,7 +136,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
             e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||e.getCurrentItem()==null)return;
             int slot=e.getRawSlot();
             if(slot==0) openKitGui(p);
-            else if(slot==1) party(p,new String[]{"create"});
+            else if(slot==1) party(p,new String[]{"gui"});
             else if(slot==4) stats(p,new String[0]);
             else if(slot==8) openKitEditorSelector(p);
             return;
@@ -142,6 +144,17 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
         if ("§8HarbourPVP §7| §dKit Düzenleme".equals(title)){
             e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||e.getCurrentItem()==null)return;
             ItemMeta m=e.getCurrentItem().getItemMeta(); if(m==null)return; Kit k=Kit.from(ChatColor.stripColor(m.getDisplayName())); if(k!=null) openKitEditor(p,k); return;
+        }
+        if ("§8HarbourPVP §7| §6Parti".equals(title)) {
+            e.setCancelled(true);
+            if (!(e.getWhoClicked() instanceof Player p) || e.getCurrentItem()==null) return;
+            int slot=e.getRawSlot();
+            UUID owner=partyOwner.getOrDefault(p.getUniqueId(),p.getUniqueId());
+            if(slot==10){ p.closeInventory(); p.sendMessage("§eOyuncu davet etmek için: §f/party invite <oyuncu>"); }
+            else if(slot==16){ party(p,new String[]{"leave"}); p.closeInventory(); }
+            else if(slot==22){ party(p,new String[]{"disband"}); }
+            else if(slot==26){ p.closeInventory(); }
+            return;
         }
         if (!GUI_TITLE.equals(title)) return;
         e.setCancelled(true);
@@ -155,12 +168,80 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
         if (k != null) { toggleQueue(p, k); Bukkit.getScheduler().runTask(this, () -> openKitGui(p)); }
     }
 
+    private String firstReadyArena(){
+        if(!getConfig().isConfigurationSection("arenas")) return null;
+        for(String n:getConfig().getConfigurationSection("arenas").getKeys(false)){
+            if(location("arenas."+n+".spawn1")!=null && location("arenas."+n+".spawn2")!=null && location("arenas."+n+".pos1")!=null && location("arenas."+n+".pos2")!=null) return n;
+        }
+        return null;
+    }
+    private boolean insideArena(Player p, String name){
+        Location x=p.getLocation(), a=location("arenas."+name+".pos1"), b=location("arenas."+name+".pos2");
+        if(a==null||b==null||x.getWorld()==null||a.getWorld()==null||!x.getWorld().equals(a.getWorld())) return false;
+        double minX=Math.min(a.getX(),b.getX()), maxX=Math.max(a.getX(),b.getX());
+        double minY=Math.min(a.getY(),b.getY()), maxY=Math.max(a.getY(),b.getY());
+        double minZ=Math.min(a.getZ(),b.getZ()), maxZ=Math.max(a.getZ(),b.getZ());
+        return x.getX()>=minX&&x.getX()<=maxX&&x.getY()>=minY&&x.getY()<=maxY&&x.getZ()>=minZ&&x.getZ()<=maxZ;
+    }
+    @EventHandler public void arenaMove(PlayerMoveEvent e){
+        Player p=e.getPlayer(); String n=activeArena.get(p.getUniqueId()); if(n==null) return;
+        if(e.getTo()==null) return;
+        if(!insideArena(p,n)){ Match mm=find(p.getUniqueId()); String slot=(mm!=null && mm.one().equals(p.getUniqueId()))?"1":"2"; Location s=location("arenas."+n+".spawn"+slot); if(s!=null) e.setTo(s); }
+    }
+
+    private Location firstArenaSpawn(int slot) {
+        if (getConfig().isConfigurationSection("arenas")) {
+            for (String name : getConfig().getConfigurationSection("arenas").getKeys(false)) {
+                Location l = location("arenas." + name + ".spawn" + slot);
+                if (l != null) return l;
+            }
+        }
+        return null;
+    }
+
+    private void saveLocation(String path, Location l) {
+        getConfig().set(path, l.getWorld().getName()+","+l.getX()+","+l.getY()+","+l.getZ()+","+l.getYaw()+","+l.getPitch());
+        saveConfig();
+    }
+
+    private boolean openPartyGui(Player p) {
+        UUID owner = partyOwner.getOrDefault(p.getUniqueId(), p.getUniqueId());
+        if (!parties.containsKey(owner)) {
+            parties.put(owner, new LinkedHashSet<>(Set.of(p.getUniqueId())));
+            partyOwner.put(p.getUniqueId(), owner);
+        }
+        Inventory inv = Bukkit.createInventory(null, 27, "§8HarbourPVP §7| §6Parti");
+        inv.setItem(10, item(Material.EMERALD, "§a§lOyuncu Davet Et", "§7Çevrim içi oyunculardan davet et"));
+        inv.setItem(13, item(Material.PLAYER_HEAD, "§e§lParti Üyeleri", "§7Üye sayısı: §f"+parties.get(owner).size()));
+        inv.setItem(16, item(Material.IRON_DOOR, "§c§lPartiden Ayrıl", "§7Partiden çık"));
+        inv.setItem(22, item(Material.BARRIER, "§c§lPartiyi Dağıt", "§7Sadece parti lideri"));
+        inv.setItem(26, item(Material.BOOK, "§7§lKapat", "§7Menüyü kapat"));
+        int slot=0;
+        for(UUID id: parties.get(owner)) {
+            if(slot>=9) break;
+            Player member=Bukkit.getPlayer(id);
+            inv.setItem(slot++, item(Material.PLAYER_HEAD, "§f"+(member==null?id.toString():member.getName()), id.equals(owner)?"§eLider":"§7Üye"));
+        }
+        p.openInventory(inv);
+        return true;
+    }
+
+    private ItemStack item(Material material, String name, String... lore) {
+        ItemStack i = new ItemStack(material);
+        ItemMeta m = i.getItemMeta();
+        m.setDisplayName(name);
+        m.setLore(Arrays.asList(lore));
+        i.setItemMeta(m);
+        return i;
+    }
+
     private void startMatch(Kit kit, UUID one, UUID two) {
         Player a=Bukkit.getPlayer(one), b=Bukkit.getPlayer(two); if(a==null||b==null)return;
         if (returnLocations.put(one,a.getLocation())==null) returnLocations.put(two,b.getLocation()); else returnLocations.put(two,b.getLocation());
-        Location l1=location("kits."+kit.name()+".position1"), l2=location("kits."+kit.name()+".position2");
-        if(l1==null||l2==null){a.sendMessage("§cArena positions are not configured for "+kit+".");b.sendMessage("§cArena positions are not configured for "+kit+".");return;}
-        prepare(a,kit); prepare(b,kit); a.teleport(l1); b.teleport(l2); matches.add(new Match(kit,one,two));
+        String arenaName = firstReadyArena();
+        Location l1=arenaName==null?null:location("arenas."+arenaName+".spawn1"), l2=arenaName==null?null:location("arenas."+arenaName+".spawn2");
+        if(l1==null||l2==null){a.sendMessage("§cArena ayarlanmadı. Admin: /ht arena create <isim>, spawn1/2 ve pos1/pos2 ayarla.");b.sendMessage("§cArena ayarlanmadı. Admin: /ht arena create <isim>, spawn1/2 ve pos1/pos2 ayarla.");return;}
+        prepare(a,kit); prepare(b,kit); a.teleport(l1); b.teleport(l2); activeArena.put(one,arenaName); activeArena.put(two,arenaName); matches.add(new Match(kit,one,two));
         a.setInvulnerable(true); b.setInvulnerable(true);
         for(int sec=3;sec>=1;sec--){ final int n=sec; Bukkit.getScheduler().runTaskLater(this,()->{ if(a.isOnline()) {a.sendTitle("§6"+n,"§7Get ready!",0,20,0); a.spigot().sendMessage(ChatMessageType.ACTION_BAR,new TextComponent("§e§l"+n));} if(b.isOnline()){b.sendTitle("§6"+n,"§7Get ready!",0,20,0); b.spigot().sendMessage(ChatMessageType.ACTION_BAR,new TextComponent("§e§l"+n));}},(3-sec)*20L); }
         Bukkit.getScheduler().runTaskLater(this,()->{ if(a.isOnline()) {a.setInvulnerable(false); a.sendTitle("§a§lFIGHT!","§7Good luck",0,20,10);} if(b.isOnline()){b.setInvulnerable(false); b.sendTitle("§a§lFIGHT!","§7Good luck",0,20,10);}},60L);
@@ -263,7 +344,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
 
     @EventHandler public void death(PlayerDeathEvent e){ Player loser=e.getEntity(); Match m=find(loser.getUniqueId()); if(m!=null) Bukkit.getScheduler().runTask(this,()->finish(m,m.opponent(loser.getUniqueId()))); }
     @EventHandler public void quit(PlayerQuitEvent e){ UUID id=e.getPlayer().getUniqueId(); queues.values().forEach(q->q.remove(id)); Match m=find(id); if(m!=null) Bukkit.getScheduler().runTask(this,()->finish(m,m.opponent(id))); }
-    private void finish(Match m, UUID winner){ if(!matches.remove(m))return; Player w=Bukkit.getPlayer(winner), loser=Bukkit.getPlayer(m.opponent(winner));
+    private void finish(Match m, UUID winner){ if(!matches.remove(m))return; activeArena.remove(m.one()); activeArena.remove(m.two()); Player w=Bukkit.getPlayer(winner), loser=Bukkit.getPlayer(m.opponent(winner));
         PlayerData wp=store.get(winner,w==null?"Unknown":w.getName()), lp=store.get(m.opponent(winner),loser==null?"Unknown":loser.getName());
         int win=wp.rating(m.kit()), lose=lp.rating(m.kit()); int wr=getConfig().getInt("win-rating",25), lr=getConfig().getInt("loss-rating",20);
         int newW=win+wr,newL=Math.max(getConfig().getInt("min-rating",0),lose-lr); wp.rating(m.kit(),newW); lp.rating(m.kit(),newL); wp.placements(m.kit(),Math.min(5,wp.placements(m.kit())+1)); lp.placements(m.kit(),Math.min(5,lp.placements(m.kit())+1));
@@ -282,22 +363,31 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private boolean history(CommandSender s,String[] a){if(!(s instanceof Player p)){s.sendMessage("Players only.");return true;}PlayerData d=store.get(p.getUniqueId(),p.getName());s.sendMessage("§6Recent matches");if(d.history().isEmpty()){s.sendMessage("§7No matches yet.");return true;}d.history().stream().limit(10).forEach(x->{String[] z=x.split("\\|",5);if(z.length>=5)s.sendMessage("§e"+z[1]+" §7» "+(z[2].equals("WIN")?"§aWIN":"§cLOSS")+" §7» §f"+z[3]+" §8vs §f"+z[4]);});return true;}
     private boolean party(CommandSender s,String[] a){
         if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}
-        if(a.length==0){s.sendMessage("§e/party create|invite <player>|join <player>|leave|list|disband");return true;}
+        if(a.length==0 || a[0].equalsIgnoreCase("gui")){ if(a.length==0){ return openPartyGui(p); } String[] create={"create"}; party(p,create); return openPartyGui(p); }
         String sub=a[0].toLowerCase();
-        UUID owner=partyOwner.get(p.getUniqueId()); if(owner==null && parties.containsKey(p.getUniqueId())) owner=p.getUniqueId();
+        UUID owner=partyOwner.get(p.getUniqueId());
+        if(owner==null && parties.containsKey(p.getUniqueId())) owner=p.getUniqueId();
         switch(sub){
             case "create" -> { if(owner!=null){p.sendMessage("§cZaten bir partidesin.");return true;} parties.put(p.getUniqueId(),new LinkedHashSet<>(Set.of(p.getUniqueId()))); partyOwner.put(p.getUniqueId(),p.getUniqueId()); p.sendMessage("§aParti oluşturuldu.");}
-            case "invite" -> { if(owner==null||!owner.equals(p.getUniqueId())){p.sendMessage("§cParti lideri olmalısın.");return true;} if(a.length<2){p.sendMessage("§e/party invite <player>");return true;} Player t=Bukkit.getPlayerExact(a[1]); if(t==null){p.sendMessage("§cOyuncu bulunamadı.");return true;} parties.get(owner).add(t.getUniqueId()); partyOwner.put(t.getUniqueId(),owner); t.sendMessage("§a"+p.getName()+" seni partiye ekledi."); p.sendMessage("§aOyuncu partiye eklendi.");}
-            case "join" -> {p.sendMessage("§7Davetler doğrudan lider tarafından /party invite ile yapılır.");}
-            case "leave" -> { if(owner==null){p.sendMessage("§cPartide değilsin.");return true;} parties.get(owner).remove(p.getUniqueId()); partyOwner.remove(p.getUniqueId()); if(parties.get(owner).size()<=0)parties.remove(owner); p.sendMessage("§aPartiden ayrıldın.");}
-            case "disband" -> { if(owner==null||!owner.equals(p.getUniqueId())){p.sendMessage("§cParti lideri olmalısın.");return true;} for(UUID id:parties.get(owner))partyOwner.remove(id); parties.remove(owner); p.sendMessage("§aParti dağıtıldı.");}
+            case "invite" -> { if(owner==null||!owner.equals(p.getUniqueId())){p.sendMessage("§cParti lideri olmalısın.");return true;} if(a.length<2){p.sendMessage("§e/party invite <player>");return true;} Player t=Bukkit.getPlayerExact(a[1]); if(t==null){p.sendMessage("§cOyuncu bulunamadı.");return true;} if(partyOwner.containsKey(t.getUniqueId())){p.sendMessage("§cBu oyuncu zaten bir partide.");return true;} parties.get(owner).add(t.getUniqueId()); partyOwner.put(t.getUniqueId(),owner); t.sendMessage("§a"+p.getName()+" seni partiye ekledi."); p.sendMessage("§aOyuncu partiye eklendi.");}
+            case "leave" -> { if(owner==null){p.sendMessage("§cPartide değilsin.");return true;} if(owner.equals(p.getUniqueId())){p.sendMessage("§cLider olarak çıkmak için önce partiyi dağıt.");return true;} parties.get(owner).remove(p.getUniqueId()); partyOwner.remove(p.getUniqueId()); p.sendMessage("§aPartiden ayrıldın.");}
+            case "disband" -> { if(owner==null||!owner.equals(p.getUniqueId())){p.sendMessage("§cParti lideri olmalısın.");return true;} for(UUID id:parties.get(owner))partyOwner.remove(id); parties.remove(owner); p.sendMessage("§aParti dağıtıldı."); p.closeInventory();}
             case "list" -> { if(owner==null){p.sendMessage("§cPartide değilsin.");return true;} p.sendMessage("§6Parti üyeleri:"); for(UUID id:parties.get(owner)){Player x=Bukkit.getPlayer(id);p.sendMessage("§7- §f"+(x==null?id:x.getName())+(id.equals(owner)?" §e(Lider)":""));}}
-            default -> p.sendMessage("§e/party create|invite <player>|leave|list|disband");
+            default -> p.sendMessage("§e/party | /party create | /party invite <player> | /party leave | /party list | /party disband");
         } return true;
     }
 
     private boolean queue(CommandSender s){s.sendMessage("§6§lRanked Queues");for(Kit k:Kit.values())s.sendMessage("§e"+k+" §7» §f"+queues.get(k).size());return true;}
-    private boolean admin(CommandSender s,String[] a){if(!s.hasPermission("harbourpvp.admin")){s.sendMessage("§cNo permission.");return true;}if(a.length==0){s.sendMessage("§e/ht setrating <player> <kit> <rating>");s.sendMessage("§e/ht settier <player> <kit> <tier>");s.sendMessage("§e/ht reset <player> <kit>");s.sendMessage("§e/ht forcematch <player1> <player2> <kit>");s.sendMessage("§e/ht kit edit <kit>");s.sendMessage("§e/ht kit save <kit>");s.sendMessage("§e/ht kit clear <kit>");s.sendMessage("§e/ht reload");return true;}try{switch(a[0].toLowerCase()){case"setrating"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,Integer.parseInt(a[3]));store.save();updateTag(p.getUniqueId());s.sendMessage("§aRating updated.");return true;}case"settier"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;Integer r=threshold(a[3]);if(r==null){s.sendMessage("§cUnknown tier.");return true;}store.get(p.getUniqueId(),p.getName()).rating(k,r);store.save();updateTag(p.getUniqueId());s.sendMessage("§aTier updated to §e"+a[3]+"§a.");return true;}case"reset"->{if(a.length<3)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,getConfig().getInt("starting-rating",1000));store.save();updateTag(p.getUniqueId());s.sendMessage("§aReset.");return true;}case"forcematch"->{if(a.length<4)break;Player p1=Bukkit.getPlayerExact(a[1]),p2=Bukkit.getPlayerExact(a[2]);Kit k=Kit.from(a[3]);if(p1==null||p2==null||k==null){s.sendMessage("§cInvalid player/kit.");return true;}startMatch(k,p1.getUniqueId(),p2.getUniqueId());return true;}case"kit"->{if(a.length<3){s.sendMessage("§e/ht kit edit|save|clear <kit>");return true;}Kit k=Kit.from(a[2]);if(k==null){s.sendMessage("§cUnknown kit.");return true;}switch(a[1].toLowerCase()){case"edit"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}openKitEditor(p,k);return true;}case"save"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}return saveKitFromInventory(p,k);}case"clear"-> {return clearKit(k,s);}}return true;}case"reload"-> {reloadConfig();s.sendMessage("§aConfig reloaded.");return true;}}}catch(Exception ex){s.sendMessage("§cInvalid command arguments.");}return true;}
+    private boolean admin(CommandSender s,String[] a){if(!s.hasPermission("harbourpvp.admin")){s.sendMessage("§cNo permission.");return true;}if(a.length==0){s.sendMessage("§e/ht setrating <player> <kit> <rating>");s.sendMessage("§e/ht settier <player> <kit> <tier>");s.sendMessage("§e/ht reset <player> <kit>");s.sendMessage("§e/ht forcematch <player1> <player2> <kit>");s.sendMessage("§e/ht arena create <isim>");s.sendMessage("§e/ht arena setspawn <isim> <1|2>");s.sendMessage("§e/ht arena pos1 <isim>");s.sendMessage("§e/ht arena pos2 <isim>");s.sendMessage("§e/ht arena delete <isim>");s.sendMessage("§e/ht arena list");s.sendMessage("§e/ht kit edit <kit>");s.sendMessage("§e/ht kit save <kit>");s.sendMessage("§e/ht kit clear <kit>");s.sendMessage("§e/ht reload");return true;}try{switch(a[0].toLowerCase()){case"setrating"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,Integer.parseInt(a[3]));store.save();updateTag(p.getUniqueId());s.sendMessage("§aRating updated.");return true;}case"settier"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;Integer r=threshold(a[3]);if(r==null){s.sendMessage("§cUnknown tier.");return true;}store.get(p.getUniqueId(),p.getName()).rating(k,r);store.save();updateTag(p.getUniqueId());s.sendMessage("§aTier updated to §e"+a[3]+"§a.");return true;}case"reset"->{if(a.length<3)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,getConfig().getInt("starting-rating",1000));store.save();updateTag(p.getUniqueId());s.sendMessage("§aReset.");return true;}case"forcematch"->{if(a.length<4)break;Player p1=Bukkit.getPlayerExact(a[1]),p2=Bukkit.getPlayerExact(a[2]);Kit k=Kit.from(a[3]);if(p1==null||p2==null||k==null){s.sendMessage("§cInvalid player/kit.");return true;}startMatch(k,p1.getUniqueId(),p2.getUniqueId());return true;}case"arena"->{
+                    if(a.length<2){s.sendMessage("§e/ht arena create <isim>");s.sendMessage("§e/ht arena setspawn <isim> <1|2>");s.sendMessage("§e/ht arena pos1 <isim>");s.sendMessage("§e/ht arena pos2 <isim>");s.sendMessage("§e/ht arena delete <isim>");s.sendMessage("§e/ht arena list");return true;}
+                    String sub=a[1].toLowerCase();
+                    if(sub.equals("create")){if(a.length<3){s.sendMessage("§e/ht arena create <isim>");return true;}String n=a[2];if(getConfig().contains("arenas."+n)){s.sendMessage("§cBu arena zaten var.");return true;}getConfig().set("arenas."+n+".spawn1",null);getConfig().set("arenas."+n+".spawn2",null);getConfig().set("arenas."+n+".pos1",null);getConfig().set("arenas."+n+".pos2",null);saveConfig();s.sendMessage("§aArena oluşturuldu: "+n);return true;}
+                    if(sub.equals("setspawn")){if(a.length<4){s.sendMessage("§e/ht arena setspawn <isim> <1|2>");return true;}String n=a[2];String which=a[3];if(!which.equals("1")&&!which.equals("2")){s.sendMessage("§cSpawn 1 veya 2 olmalı.");return true;}if(!getConfig().contains("arenas."+n)){s.sendMessage("§cArena bulunamadı.");return true;}if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}saveLocation("arenas."+n+".spawn"+which,p.getLocation());s.sendMessage("§aArena "+n+" spawn"+which+" ayarlandı.");return true;}
+                    if(sub.equals("pos1")||sub.equals("pos2")){if(a.length<3){s.sendMessage("§e/ht arena "+sub+" <isim>");return true;}String n=a[2];if(!getConfig().contains("arenas."+n)){s.sendMessage("§cArena bulunamadı.");return true;}if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}saveLocation("arenas."+n+"."+sub,p.getLocation());s.sendMessage("§aArena "+n+" "+sub+" ayarlandı.");return true;}
+                    if(sub.equals("delete")){if(a.length<3){s.sendMessage("§e/ht arena delete <isim>");return true;}getConfig().set("arenas."+a[2],null);saveConfig();s.sendMessage("§aArena silindi.");return true;}
+                    if(sub.equals("list")){s.sendMessage("§6§lArenalar");if(!getConfig().isConfigurationSection("arenas")){s.sendMessage("§7Henüz arena yok.");return true;}for(String n:getConfig().getConfigurationSection("arenas").getKeys(false))s.sendMessage("§e- "+n+" §7spawn1="+(location("arenas."+n+".spawn1")!=null?"✓":"✗")+" spawn2="+(location("arenas."+n+".spawn2")!=null?"✓":"✗")+" pos1="+(location("arenas."+n+".pos1")!=null?"✓":"✗")+" pos2="+(location("arenas."+n+".pos2")!=null?"✓":"✗"));return true;}
+                    s.sendMessage("§e/ht arena create|setspawn|pos1|pos2|delete|list");return true;
+                }case"kit"->{if(a.length<3){s.sendMessage("§e/ht kit edit|save|clear <kit>");return true;}Kit k=Kit.from(a[2]);if(k==null){s.sendMessage("§cUnknown kit.");return true;}switch(a[1].toLowerCase()){case"edit"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}openKitEditor(p,k);return true;}case"save"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}return saveKitFromInventory(p,k);}case"clear"-> {return clearKit(k,s);}}return true;}case"reload"-> {reloadConfig();s.sendMessage("§aConfig reloaded.");return true;}}}catch(Exception ex){s.sendMessage("§cInvalid command arguments.");}return true;}
     private String displayTier(PlayerData d, Kit kit){ return d.placements(kit) < getConfig().getInt("placement-matches",5) ? "Unranked" : tier(d.rating(kit)); }
     private String tier(int rating){String best="HT5";int br=-1;for(Map.Entry<String,Object> e:getConfig().getConfigurationSection("tiers").getValues(false).entrySet()){int t=getConfig().getInt("tiers."+e.getKey());if(t<=rating&&t>=br){br=t;best=e.getKey();}}return best;}
     private Integer threshold(String tier){if(getConfig().contains("tiers."+tier))return getConfig().getInt("tiers."+tier);return null;}
