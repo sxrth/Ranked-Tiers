@@ -1,10 +1,12 @@
-# HarbourPVP — GitHub Actions Build
+# HarbourPVP 1.0.6
 
-1. Create a GitHub repository.
-2. Upload all files in this project to the repository.
-3. Open the **Actions** tab.
-4. Run **Build HarbourPVP** (or push a commit).
-5. When it finishes, open the workflow run.
-6. Download the **HarbourPVP-JAR** artifact.
+GitHub Actions builds this project automatically.
 
-The workflow uses Java 21 and builds the plugin on GitHub. No local Gradle installation is required.
+1. Upload/replace the repository files, including `.github/workflows/build.yml`.
+2. Commit changes.
+3. Open **Actions**.
+4. Select **Build HarbourPVP**.
+5. Click **Run workflow**.
+6. Open the green run and download the artifact **HarbourPVP-1.0.6**.
+
+The workflow installs Java 21 and Gradle 8.10.2 itself; no Gradle installation is required on your PC.
