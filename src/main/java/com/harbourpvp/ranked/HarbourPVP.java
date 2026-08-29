@@ -29,7 +29,6 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private static final String GUI_TITLE = "§8HarbourPVP §7| §6Ranked Kits";
     private static final String EDITOR_PREFIX = "§8HarbourPVP §7| §eKit Editor: ";
     private static final String LOBBY_TITLE = "§8HarbourPVP §7| §6Lobby";
-    private static final String PARTY_TITLE = "§8HarbourPVP §7| §6Parti";
     private final Map<UUID, UUID> partyOwner = new HashMap<>();
     private final Map<UUID, Set<UUID>> parties = new HashMap<>();
     private final Map<UUID, Kit> selectedKit = new HashMap<>();
@@ -98,7 +97,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
             int waiting = queues.get(k).size();
             List<String> lore = new ArrayList<>();
             lore.add("§7Rating: §e" + rating);
-            lore.add("§7Tier: §d§l" + displayTier(d, k));
+            lore.add("§7Tier: §d§l" + tier(rating));
             lore.add("§7Sırada: §a" + waiting + " oyuncu");
             lore.add("");
             lore.add(queues.get(k).contains(p.getUniqueId()) ? "§cTıkla: Sıradan çık" : "§aTıkla: Sıraya gir");
@@ -125,7 +124,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
 
     @EventHandler public void interactLobby(org.bukkit.event.player.PlayerInteractEvent e){
         Player p=e.getPlayer(); if(find(p.getUniqueId())!=null)return; ItemStack it=e.getItem(); if(it==null||!it.hasItemMeta())return; String n=ChatColor.stripColor(it.getItemMeta().getDisplayName());
-        if(n.equals("Sıraya Gir")){e.setCancelled(true);openKitGui(p);} else if(n.equals("Parti Aç")){e.setCancelled(true);openPartyGui(p);} else if(n.equals("İstatistikler")){e.setCancelled(true);stats(p,new String[0]);} else if(n.equals("Kit Düzenleme")){e.setCancelled(true);openKitEditorSelector(p);}
+        if(n.equals("Sıraya Gir")){e.setCancelled(true);openKitGui(p);} else if(n.equals("Parti Aç")){e.setCancelled(true);party(p,new String[]{"create"});} else if(n.equals("İstatistikler")){e.setCancelled(true);stats(p,new String[0]);} else if(n.equals("Kit Düzenleme")){e.setCancelled(true);openKitEditorSelector(p);}
     }
     @EventHandler public void dropLobby(org.bukkit.event.player.PlayerDropItemEvent e){ if(find(e.getPlayer().getUniqueId())==null) e.setCancelled(true); }
 
@@ -135,29 +134,9 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
             e.setCancelled(true); if(!(e.getWhoClicked() instanceof Player p)||e.getCurrentItem()==null)return;
             int slot=e.getRawSlot();
             if(slot==0) openKitGui(p);
-            else if(slot==1) openPartyGui(p);
+            else if(slot==1) party(p,new String[]{"create"});
             else if(slot==4) stats(p,new String[0]);
             else if(slot==8) openKitEditorSelector(p);
-            return;
-        }
-        if (PARTY_TITLE.equals(title)) {
-            e.setCancelled(true);
-            if (!(e.getWhoClicked() instanceof Player p) || e.getCurrentItem() == null) return;
-            ItemMeta meta = e.getCurrentItem().getItemMeta();
-            if (meta == null || meta.getDisplayName() == null) return;
-            String name = ChatColor.stripColor(meta.getDisplayName());
-            if (name.equals("Parti Oluştur")) { party(p, new String[]{"create"}); openPartyGui(p); return; }
-            if (name.equals("Oyuncu Davet Et")) {
-                UUID owner = partyOwner.getOrDefault(p.getUniqueId(), p.getUniqueId());
-                Set<UUID> members = parties.get(owner);
-                if (members == null) { p.sendMessage("§cÖnce parti oluşturmalısın."); return; }
-                Player target = Bukkit.getOnlinePlayers().stream().filter(x -> !members.contains(x.getUniqueId()) && !x.getUniqueId().equals(p.getUniqueId())).findFirst().orElse(null);
-                if (target == null) { p.sendMessage("§cDavet edilecek çevrim içi oyuncu yok."); return; }
-                party(p, new String[]{"invite", target.getName()}); openPartyGui(p); return;
-            }
-            if (name.equals("Partiden Ayrıl")) { party(p, new String[]{"leave"}); p.closeInventory(); return; }
-            if (name.equals("Partiyi Dağıt")) { party(p, new String[]{"disband"}); p.closeInventory(); return; }
-            if (name.equals("Kapat")) { p.closeInventory(); }
             return;
         }
         if ("§8HarbourPVP §7| §dKit Düzenleme".equals(title)){
@@ -249,17 +228,22 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
         p.openInventory(inv);
     }
 
-    private boolean saveKitFromEditor(Player p, Kit kit){
-        if(!p.getOpenInventory().getTitle().equals(EDITOR_PREFIX+kit.name())){ p.sendMessage("§cÖnce /ht kit edit "+kit.name()+" açmalısın."); return true; }
-        Inventory inv=p.getOpenInventory().getTopInventory();
+    private boolean saveKitFromInventory(Player p, Kit kit){
+        PlayerInventory inv=p.getInventory();
         List<Map<String,Object>> items=new ArrayList<>();
-        for(int i=0;i<41;i++){
+        for(int i=0;i<36;i++){
             ItemStack item=inv.getItem(i);
             items.add(item==null?null:item.serialize());
         }
+        items.add(inv.getHelmet()==null?null:inv.getHelmet().serialize());
+        items.add(inv.getChestplate()==null?null:inv.getChestplate().serialize());
+        items.add(inv.getLeggings()==null?null:inv.getLeggings().serialize());
+        items.add(inv.getBoots()==null?null:inv.getBoots().serialize());
+        items.add(inv.getItemInOffHand()==null?null:inv.getItemInOffHand().serialize());
         getConfig().set("kits."+kit.name()+".items",items);
         saveConfig();
-        p.sendMessage("§a✓ "+kit.name()+" kit loadout'u kaydedildi.");
+        p.sendMessage("§a✓ "+kit.name()+" kit loadout'u mevcut envanterinden kaydedildi.");
+        p.sendMessage("§7Komut: §e/ht kit save "+kit.name());
         return true;
     }
 
@@ -296,37 +280,9 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private boolean stats(CommandSender s,String[] a){Player p=a.length==0&&s instanceof Player?(Player)s:null; if(a.length>0)p=Bukkit.getPlayerExact(a[0]); if(p==null){s.sendMessage("§cPlayer not found.");return true;} PlayerData d=store.get(p.getUniqueId(),p.getName()); s.sendMessage("§6§lHarbourPVP §8» §f"+d.name()); for(Kit k:Kit.values())s.sendMessage("§e"+k+" §7» §f"+d.rating(k)+" §8» §e"+displayTier(d,k)); return true;}
     private boolean leaderboard(CommandSender s,String[] a){Kit k=a.length>0?Kit.from(a[0]):Kit.Sword;if(k==null){s.sendMessage("§cUnknown kit.");return true;}List<PlayerData> list=new ArrayList<>(store.all());list.sort((x,y)->Integer.compare(y.rating(k),x.rating(k)));s.sendMessage("§6§l"+k+" Leaderboard");int i=1;for(PlayerData p:list){if(i>10)break;s.sendMessage("§e#"+i+" §f"+p.name()+" §7» §a"+p.rating(k)+" §8("+displayTier(p,k)+")");i++;}return true;}
     private boolean history(CommandSender s,String[] a){if(!(s instanceof Player p)){s.sendMessage("Players only.");return true;}PlayerData d=store.get(p.getUniqueId(),p.getName());s.sendMessage("§6Recent matches");if(d.history().isEmpty()){s.sendMessage("§7No matches yet.");return true;}d.history().stream().limit(10).forEach(x->{String[] z=x.split("\\|",5);if(z.length>=5)s.sendMessage("§e"+z[1]+" §7» "+(z[2].equals("WIN")?"§aWIN":"§cLOSS")+" §7» §f"+z[3]+" §8vs §f"+z[4]);});return true;}
-    private ItemStack item(Material material, String name, String... lore) {
-        ItemStack stack = new ItemStack(material);
-        ItemMeta meta = stack.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(name);
-            meta.setLore(Arrays.asList(lore));
-            stack.setItemMeta(meta);
-        }
-        return stack;
-    }
-
-    private void openPartyGui(Player p) {
-        Inventory inv = Bukkit.createInventory(null, 27, PARTY_TITLE);
-        UUID owner = partyOwner.get(p.getUniqueId());
-        if (owner == null && parties.containsKey(p.getUniqueId())) owner = p.getUniqueId();
-        boolean inParty = owner != null && parties.containsKey(owner);
-        if (!inParty) {
-            inv.setItem(11, item(Material.CHEST, "§6§lParti Oluştur", "§7Yeni bir parti oluştur"));
-        } else {
-            inv.setItem(11, item(Material.EMERALD, "§a§lOyuncu Davet Et", "§7Çevrim içi bir oyuncuyu partiye ekle"));
-            inv.setItem(13, item(Material.PAPER, "§e§lParti Üyeleri", "§7Üye sayısı: §f" + parties.get(owner).size()));
-            inv.setItem(15, item(Material.OAK_DOOR, "§c§lPartiden Ayrıl", "§7Partiden çık"));
-            if (owner.equals(p.getUniqueId())) inv.setItem(22, item(Material.BARRIER, "§c§lPartiyi Dağıt", "§7Partiyi tamamen dağıt"));
-        }
-        inv.setItem(26, item(Material.BOOK, "§7§lKapat", "§7Menüyü kapat"));
-        p.openInventory(inv);
-    }
-
     private boolean party(CommandSender s,String[] a){
         if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}
-        if(a.length==0){ openPartyGui(p); return true;}
+        if(a.length==0){s.sendMessage("§e/party create|invite <player>|join <player>|leave|list|disband");return true;}
         String sub=a[0].toLowerCase();
         UUID owner=partyOwner.get(p.getUniqueId()); if(owner==null && parties.containsKey(p.getUniqueId())) owner=p.getUniqueId();
         switch(sub){
@@ -341,7 +297,7 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     }
 
     private boolean queue(CommandSender s){s.sendMessage("§6§lRanked Queues");for(Kit k:Kit.values())s.sendMessage("§e"+k+" §7» §f"+queues.get(k).size());return true;}
-    private boolean admin(CommandSender s,String[] a){if(!s.hasPermission("harbourpvp.admin")){s.sendMessage("§cNo permission.");return true;}if(a.length==0){s.sendMessage("§e/ht setrating <player> <kit> <rating>");s.sendMessage("§e/ht settier <player> <kit> <tier>");s.sendMessage("§e/ht reset <player> <kit>");s.sendMessage("§e/ht forcematch <player1> <player2> <kit>");s.sendMessage("§e/ht kit edit <kit>");s.sendMessage("§e/ht kit save <kit>");s.sendMessage("§e/ht kit clear <kit>");s.sendMessage("§e/ht reload");return true;}try{switch(a[0].toLowerCase()){case"setrating"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,Integer.parseInt(a[3]));store.save();updateTag(p.getUniqueId());s.sendMessage("§aRating updated.");return true;}case"settier"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;Integer r=threshold(a[3]);if(r==null){s.sendMessage("§cUnknown tier.");return true;}store.get(p.getUniqueId(),p.getName()).rating(k,r);store.save();updateTag(p.getUniqueId());s.sendMessage("§aTier updated to §e"+a[3]+"§a.");return true;}case"reset"->{if(a.length<3)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,getConfig().getInt("starting-rating",1000));store.save();updateTag(p.getUniqueId());s.sendMessage("§aReset.");return true;}case"forcematch"->{if(a.length<4)break;Player p1=Bukkit.getPlayerExact(a[1]),p2=Bukkit.getPlayerExact(a[2]);Kit k=Kit.from(a[3]);if(p1==null||p2==null||k==null){s.sendMessage("§cInvalid player/kit.");return true;}startMatch(k,p1.getUniqueId(),p2.getUniqueId());return true;}case"kit"->{if(a.length<3){s.sendMessage("§e/ht kit edit|save|clear <kit>");return true;}Kit k=Kit.from(a[2]);if(k==null){s.sendMessage("§cUnknown kit.");return true;}switch(a[1].toLowerCase()){case"edit"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}openKitEditor(p,k);return true;}case"save"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}return saveKitFromEditor(p,k);}case"clear"-> {return clearKit(k,s);}}return true;}case"reload"-> {reloadConfig();s.sendMessage("§aConfig reloaded.");return true;}}}catch(Exception ex){s.sendMessage("§cInvalid command arguments.");}return true;}
+    private boolean admin(CommandSender s,String[] a){if(!s.hasPermission("harbourpvp.admin")){s.sendMessage("§cNo permission.");return true;}if(a.length==0){s.sendMessage("§e/ht setrating <player> <kit> <rating>");s.sendMessage("§e/ht settier <player> <kit> <tier>");s.sendMessage("§e/ht reset <player> <kit>");s.sendMessage("§e/ht forcematch <player1> <player2> <kit>");s.sendMessage("§e/ht kit edit <kit>");s.sendMessage("§e/ht kit save <kit>");s.sendMessage("§e/ht kit clear <kit>");s.sendMessage("§e/ht reload");return true;}try{switch(a[0].toLowerCase()){case"setrating"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,Integer.parseInt(a[3]));store.save();updateTag(p.getUniqueId());s.sendMessage("§aRating updated.");return true;}case"settier"->{if(a.length<4)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;Integer r=threshold(a[3]);if(r==null){s.sendMessage("§cUnknown tier.");return true;}store.get(p.getUniqueId(),p.getName()).rating(k,r);store.save();updateTag(p.getUniqueId());s.sendMessage("§aTier updated to §e"+a[3]+"§a.");return true;}case"reset"->{if(a.length<3)break;Player p=Bukkit.getPlayerExact(a[1]);Kit k=Kit.from(a[2]);if(p==null||k==null)break;store.get(p.getUniqueId(),p.getName()).rating(k,getConfig().getInt("starting-rating",1000));store.save();updateTag(p.getUniqueId());s.sendMessage("§aReset.");return true;}case"forcematch"->{if(a.length<4)break;Player p1=Bukkit.getPlayerExact(a[1]),p2=Bukkit.getPlayerExact(a[2]);Kit k=Kit.from(a[3]);if(p1==null||p2==null||k==null){s.sendMessage("§cInvalid player/kit.");return true;}startMatch(k,p1.getUniqueId(),p2.getUniqueId());return true;}case"kit"->{if(a.length<3){s.sendMessage("§e/ht kit edit|save|clear <kit>");return true;}Kit k=Kit.from(a[2]);if(k==null){s.sendMessage("§cUnknown kit.");return true;}switch(a[1].toLowerCase()){case"edit"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}openKitEditor(p,k);return true;}case"save"->{if(!(s instanceof Player p)){s.sendMessage("§cPlayers only.");return true;}return saveKitFromInventory(p,k);}case"clear"-> {return clearKit(k,s);}}return true;}case"reload"-> {reloadConfig();s.sendMessage("§aConfig reloaded.");return true;}}}catch(Exception ex){s.sendMessage("§cInvalid command arguments.");}return true;}
     private String displayTier(PlayerData d, Kit kit){ return d.placements(kit) < getConfig().getInt("placement-matches",5) ? "Unranked" : tier(d.rating(kit)); }
     private String tier(int rating){String best="HT5";int br=-1;for(Map.Entry<String,Object> e:getConfig().getConfigurationSection("tiers").getValues(false).entrySet()){int t=getConfig().getInt("tiers."+e.getKey());if(t<=rating&&t>=br){br=t;best=e.getKey();}}return best;}
     private Integer threshold(String tier){if(getConfig().contains("tiers."+tier))return getConfig().getInt("tiers."+tier);return null;}
