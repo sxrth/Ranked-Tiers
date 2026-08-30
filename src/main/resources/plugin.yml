@@ -9,10 +9,15 @@ commands:
     description: Open the HarbourPVP queue menu
   stats:
     description: View ranked statistics
+  profile:
+    description: View a player profile
   leaderboard:
-    description: View kit leaderboard
+    description: View professional kit leaderboard
+    aliases: [lb, top]
   history:
     description: View match history
+  profile:
+    description: View a player profile
   queue:
     description: View queue status
   party:
