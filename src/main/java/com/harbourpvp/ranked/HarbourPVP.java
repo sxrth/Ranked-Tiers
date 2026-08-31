@@ -195,7 +195,8 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
     private String firstReadyArena(){
         if(!getConfig().isConfigurationSection("arenas")) return null;
         for(String n:getConfig().getConfigurationSection("arenas").getKeys(false)){
-            if(location("arenas."+n+".spawn1")!=null && location("arenas."+n+".spawn2")!=null && location("arenas."+n+".pos1")!=null && location("arenas."+n+".pos2")!=null) return n;
+            // A match only needs two valid spawns. pos1/pos2 are optional arena-boundary data.
+            if(location("arenas."+n+".spawn1")!=null && location("arenas."+n+".spawn2")!=null) return n;
         }
         return null;
     }
@@ -264,7 +265,12 @@ public class HarbourPVP extends org.bukkit.plugin.java.JavaPlugin implements Lis
         if (returnLocations.put(one,a.getLocation())==null) returnLocations.put(two,b.getLocation()); else returnLocations.put(two,b.getLocation());
         String arenaName = firstReadyArena();
         Location l1=arenaName==null?null:location("arenas."+arenaName+".spawn1"), l2=arenaName==null?null:location("arenas."+arenaName+".spawn2");
-        if(l1==null||l2==null){a.sendMessage("§cArena ayarlanmadı. Admin: /ht arena create <isim>, spawn1/2 ve pos1/pos2 ayarla.");b.sendMessage("§cArena ayarlanmadı. Admin: /ht arena create <isim>, spawn1/2 ve pos1/pos2 ayarla.");return;}
+        if(l1==null||l2==null){
+            a.sendMessage("§cBu kit için kullanılabilir arena bulunamadı. Admin: /ht arena list");
+            b.sendMessage("§cBu kit için kullanılabilir arena bulunamadı. Admin: /ht arena list");
+            getLogger().warning("Match blocked: no arena with both spawn1 and spawn2. Kit="+kit);
+            return;
+        }
         prepare(a,kit); prepare(b,kit); a.teleport(l1); b.teleport(l2); activeArena.put(one,arenaName); activeArena.put(two,arenaName); matches.add(new Match(kit,one,two));
         a.setInvulnerable(true); b.setInvulnerable(true);
         for(int sec=3;sec>=1;sec--){ final int n=sec; Bukkit.getScheduler().runTaskLater(this,()->{ if(a.isOnline()) {a.sendTitle("§6"+n,"§7Get ready!",0,20,0); a.spigot().sendMessage(ChatMessageType.ACTION_BAR,new TextComponent("§e§l"+n));} if(b.isOnline()){b.sendTitle("§6"+n,"§7Get ready!",0,20,0); b.spigot().sendMessage(ChatMessageType.ACTION_BAR,new TextComponent("§e§l"+n));}},(3-sec)*20L); }
